@@ -1,21 +1,23 @@
 global start
+global code_select
+
 extern long_mode_start
 section .text
 bits 32
 start:
         mov esp, stack_top
-
         call check_multiboot
         call check_cpuid
         call check_long_mode
 
         call set_up_page_tables
         call enable_paging
-        ; load 64-bit GDT
-        lgdt [gdt64.pointer]
 
-        jmp gdt64.code:long_mode_start
-        ; print ok
+        ; load 64-bit GDT
+        lgdt [pointer]
+
+        jmp code_selector:long_mode_start
+        ; print ok should never get here
         mov dword [0xb8000], 0x2F4B2F4F
         hlt
 
@@ -139,14 +141,43 @@ enable_paging:
 
         ret
 
+struc gdt_entry
+.limit_low:   resb 2
+.base_low:    resb 2
+.base_middle: resb 1
+.access:      resb 1
+.granularity: resb 1
+.base_high:   resb 1
+endstruc
+
 section .rodata
 gdt64:
         dq 0                    ; zero entry
-.code: equ $ - gdt64
-        dq (1<<43) | (1<<44) | (1<<47) | (1<<53) ; code segment
-.pointer:
+code_selector: equ $ - gdt64    ; cs
+istruc gdt_entry
+at gdt_entry.limit_low, dw 0
+at gdt_entry.base_low, dw 0
+at gdt_entry.base_middle, db 0
+at gdt_entry.access, db 154
+at gdt_entry.granularity, db 175
+at gdt_entry.base_high, db 0
+iend
+data_selector: equ $ - gdt64    ; ds
+istruc gdt_entry
+at gdt_entry.limit_low, dw 0
+at gdt_entry.base_low, dw 0
+at gdt_entry.base_middle, db 0
+at gdt_entry.access, db 146
+at gdt_entry.granularity, db 0
+at gdt_entry.base_high, db 0
+iend
+        ; dq (1<<43) | (1<<44) | (1<<47) | (1<<53)
+        ; code segment
+pointer:
         dw $ - gdt64 - 1
         dq gdt64
+
+
 section .bss
 align 4096
 p4_table:

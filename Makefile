@@ -15,8 +15,11 @@ all: $(kernel)
 clean:
 	@rm -r build
 
+debug: $(iso)
+	@qemu-system-x86_64 -S -s -curses -cdrom $(iso)
+
 run: $(iso)
-	@qemu-system-x86_64 -cdrom $(iso)
+	@qemu-system-x86_64 -curses -cdrom $(iso)
 
 iso: $(iso)
 
@@ -32,4 +35,4 @@ $(kernel): $(assembly_object_files) $(linker_script)
 
 build/arch/$(arch)/%.o: src/arch/$(arch)/%.asm
 	@mkdir -p $(shell dirname $@)
-	@nasm -f elf64 $< -o $@
+	@nasm -f elf64 -g -F stabs $< -o $@

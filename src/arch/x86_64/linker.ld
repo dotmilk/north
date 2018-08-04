@@ -9,7 +9,27 @@ SECTIONS {
 
     .text :
     {
-        *(.text)
+        *(.text .text.*)
     }
+
+    /* .rodata : */
+    /* { */
+    /*     *(.rodata .rodata.*) */
+    /* } */
+
+    /* .data.rel.ro : */
+    /* { */
+    /*     *(.data.rel.ro .data.rel.ro.*) */
+    /* } */
+
+    /* .data : */
+    /* { */
+    /*     *(.data .data.*) */
+    /* } */
+
+    /* kernel_stack_bottom = .; */
+    /* .    += kernel_stack_size; */
+    /* . = ALIGN(16); */
+    /* kernel_stack_top = .; */
 
 }
