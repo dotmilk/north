@@ -79,8 +79,8 @@ section .text
 
 start_forth:
         cld                  ; SI DI Inc on String
-        mov rbp, r_stack_top ; point us at the return stack
-        mov rsp, stack_top   ; point us at the stack
+        mov rbp, r_stack_top ; point to return stack
+        mov rsp, stack_top   ; point to the stack
                              ; mov var_S0, rsp
                              ; save a pointer to stack top
         mov rsi, cold_start  ; init interpreter
@@ -89,8 +89,6 @@ start_forth:
 section .rodata
 cold_start:
         dq DBG
-
-        defcode ""
 
         defcode "DROP",4,DROP
         pop rax
@@ -143,19 +141,174 @@ cold_start:
         push rax
         NEXT
 
+        defcode "2SWAP",5,TWOSWAP
+        pop rax
+        pop rbx
+        pop rcx
+        pop rdx
+        push rbx
+        push rax
+        push rdx
+        push rcx
+        NEXT
+
+        defcode "?DUP",4,QDUP
+        mov rax, [rsp]
+        test rax, rax
+        jz .l1
+        push rax
+.l1:
+        NEXT
+
+        defcode "1+",2,INCR
+        inc qword [rsp]
+        NEXT
+
+        defcode "1-",2,DECR
+        dec qword [rsp]
+        NEXT
+
+        defcode "4+",2,INCR4
+        add qword [rsp], 4
+        NEXT
+
+        defcode "8+",2,INCR8
+        add qword [rsp], 8
+        NEXT
+
+        defcode "4-",2,DECR4
+        sub qword [rsp], 4
+        NEXT
+
+        defcode "8-",2,DECR8
+        sub qword [rsp], 8
+        NEXT
+
+        defcode "+",1,ADD
+        pop rax
+        add [rsp], rax
+        NEXT
+
+        defcode "-",1,SUB
+        pop rax
+        sub [rsp], rax
+        NEXT
+
+        defcode "*",1,MUL
+        pop rax
+        pop rbx
+        imul rbx,rax
+        push rax
+        NEXT
+
+        defcode "/MOD",4,DIVMOD
+        xor rdx, rdx
+        pop rbx
+        pop rax
+        idiv rbx
+        push rdx
+        push rax
+        NEXT
+
+; common ops for comparisons
+%macro cmp2 0
+        pop rax
+        pop rbx
+        cmp rax, rbx
+%endmacro
+; put result on stack
+%macro pushCmp 0
+        movzx rax, al
+        push rax
+%endmacro
+
+        defcode "=",1,EQU
+        cmp2
+        sete al
+        pushCmp
+        NEXT
+
+        defcode "<>",2,NEQU
+        cmp2
+        setne al
+        pushCmp
+        NEXT
+
+        defcode "<",1,LT
+        cmp2
+        setl al
+        pushCmp
+        NEXT
+
+        defcode ">",1,GT
+        cmp2
+        setg al
+        pushCmp
+        NEXT
+
+        defcode "<=",2,LE
+        cmp2
+        setle al
+        pushCmp
+        NEXT
+
+        defcode ">=",2,GE
+        cmp2
+        setge al
+        pushCmp
+        NEXT
+; common ops for test
+%macro tst 0
+        pop rax
+        test rax, rax
+%endmacro
+
+        defcode "0=",2,ZEQU
+        tst
+        setz al
+        pushCmp
+        NEXT
+
+        defcode "0<>",3,ZNEQU
+        tst
+        setnz al
+        pushCmp
+        NEXT
+
+        defcode "0<",2,ZLT
+        tst
+        setl al
+        pushCmp
+        NEXT
+
+        defcode "0>",2,ZGT
+        tst
+        setg al
+        pushCmp
+        NEXT
+
+        defcode "0<=",3,ZLE
+        tst
+        setle al
+        pushCmp
+        NEXT
+
+        defcode "0>=",3,ZGE
+        tst
+        setge al
+        pushCmp
+
         defcode "DBG",4,DBG
         call debug_y
 
 debug_y:
         mov rax, 0x2F732F652F79
         mov qword [0xB8000], rax
-        hlt
 
 debug_n:
         mov rax, 0x2F4A2F4F2F4b2F4F
         mov qword [0xB8000], rax
         hlt
-
 
 section .bss
 align 4096
