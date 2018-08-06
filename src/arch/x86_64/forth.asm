@@ -81,8 +81,7 @@ start_forth:
         cld                  ; SI DI Inc on String
         mov rbp, r_stack_top ; point to return stack
         mov rsp, stack_top   ; point to the stack
-                             ; mov var_S0, rsp
-                             ; save a pointer to stack top
+        mov [var_SZ], rsp      ; save a pointer to stack top
         mov rsi, cold_start  ; init interpreter
         NEXT                 ; run
 
@@ -257,6 +256,7 @@ cold_start:
         setge al
         pushCmp
         NEXT
+
 ; common ops for test
 %macro tst 0
         pop rax
@@ -297,13 +297,259 @@ cold_start:
         tst
         setge al
         pushCmp
+        NEXT
+
+        defcode "AND",3,AND
+        pop rax
+        and [rsp], rax
+        NEXT
+
+        defcode "OR",2,OR
+        pop rax
+        or [rsp], rax
+        NEXT
+
+        defcode "XOR",3,XOR
+        pop rax
+        xor [rsp], rax
+        NEXT
+
+        defcode "INVERT",6,INVERT
+        not qword [rsp]
+        NEXT
+
+; returning from forth words
+        defcode "EXIT",4,EXIT
+        POPRSP rsi
+        NEXT
+
+; like next but push instead of jmp
+        defcode "LIT",3,LIT
+        lodsq
+        push rax
+        NEXT
+
+; Direct Memory operations
+        defcode "!",1,STORE
+        pop rbx                 ; addr
+        pop rax                 ; dat
+        mov [rbx], rax
+        NEXT
+
+        defcode "@",1,FETCH
+        pop rbx                 ; addr
+        mov rax, [rbx]          ; get dat
+        push rax                ; place on stack
+        NEXT
+
+        defcode "+!",2,ADDSTORE
+        pop rbx                 ; addr
+        pop rax                 ; operand 1
+        add [rbx], rax
+        NEXT
+
+        defcode "-1",2,SUBSTORE
+        pop rbx                 ; addr
+        pop rax                 ; operand 1
+        sub [rbx], rax
+        NEXT
+
+; byte level memory ops
+
+        defcode "C!",2,STOREBYTE
+        pop rbx                 ; addr
+        pop rax                 ; dat
+        mov [rbx], al
+        NEXT
+
+        defcode "C@",2,FETCHBYTE
+        pop rbx                 ; addr
+        xor rax, rax            ; clear rax
+        mov al, [rbx]
+        push rax
+        NEXT
+
+        defcode "C@C!",4,CCOPY
+        mov rbx, [rsp+8]        ; source addr
+        mov al, [rbx]           ; source char
+        pop rdi                 ; destination addr
+        stosb                   ; copy it
+        push rdi
+        inc qword [rsp+8]
+        NEXT
+
+        defcode "CMOVE",5,CMOVE
+        mov rdx, rsi            ; keep rsi
+        pop rcx                 ; length
+        pop rdi                 ; destination
+        pop rsi                 ; source
+        rep movsb               ; sourc -> destination
+        mov rsi, rdx            ; restore rsi
+
+; Builtin variables
+%macro defvar 3-5 0,0
+        defcode %1, %2, %3, %4
+        push qword var_%3
+        NEXT
+section .data
+align 8
+var_%3:
+        dq %5
+%endmacro
+
+        defvar "STATE",5,STATE
+        defvar "HERE",4,HERE
+        defvar "LATEST",6,LATEST ; initial should be last builtin name_SYSCALL0
+        defvar "S0",2,SZ
+        defvar "BASE",4,BASE,10
+
+%macro defconst 4-5 0
+        defcode %1, %2, %3, %5
+	push %4                 ; value
+	NEXT
+%endmacro
+
+        defconst "R0",2,RZ,r_stack_top
+        defconst "DOCOL",5,__DOCOL,DOCOL
+        defconst "F_IMMED",7,__F_IMMED,F_IMMED
+        defconst "F_HIDDEN",8,__F_HIDDDEN,F_HIDDEN
+        defconst "F_LENMASK",9,__F_LENMASK,F_LENMASK
+
+; return stack
+        defcode ">R",2,TOR
+        pop rax                 ; from param stack
+        PUSHRSP rax             ; to return stack
+        NEXT
+
+        defcode "R>",2,FROMR
+        POPRSP rax              ; from return stack
+        push rax                ; to parameter stack
+        NEXT
+
+        defcode "RSP@",4,RSPFETCH
+        push rbp
+        NEXT
+
+        defcode "RSP!",4,RSPSTORE
+        pop rbp
+        NEXT
+
+        defcode "RDROP",5,RDROP
+        add rbp, 8
+        NEXT
+
+; Parameter stack
+
+        defcode "DSP@",4,DSPFETCH
+        mov rax, rsp
+        push rax
+        NEXT
+
+        defcode "DSP!",4,DSPSTORE
+        pop rsp
+        NEXT
+; ---- Input ----
+        defcode "KEY",3,KEY
+        call _KEY
+        push rax
+        NEXT
+_KEY:
+        mov rbx, [currkey]
+        cmp rbx, [bufftop]
+        jge _KEY.exhausted
+        xor rax, rax
+        mov al, [rbx]           ; next byte / key
+        inc rbx
+        mov [currkey], rbx
+        ret
+.exhausted:                     ; out of input get more bytes
+        ; the place to swap between memory / key input
+        hlt
+.err:
+        hlt
+currkey:
+        dq buffer
+bufftop:
+        dq buffer
+
+; ---- Emit ----
+        defcode "EMIT",4,EMIT
+        pop rax
+        call _EMIT
+        NEXT
+_EMIT
+
+
+; ---- Word ----
+        defcode "WORD",4,$WORD
+        call _WORD
+        push rdi                ; base addr of word
+        push rcx                ; length
+        NEXT
+_WORD:
+; first non blank non \ comment
+.start:
+        call _KEY               ; get byte of input
+        cmp al, `\\`            ; \ start of comment
+        je _WORD.skip           ; skip it if so
+        cmp al, ' '             ; is it space?
+        jbe _WORD.start
+
+        ; search for end of word
+        mov rdi, word_buffer
+.slurp:
+        stosb                   ; add char to return buffer
+        call _KEY               ; get next byte
+        cmp al, ' '             ; is it space?
+        ja _WORD.slurp          ; if not get more
+
+        ; return the contents of buffer
+        sub rdi, word_buffer
+        mov rcx, rdi            ; length into rcx
+        mov rdi, word_buffer    ; give addr of buffer
+        ret
+
+        ; skip comments
+.skip:
+        call _KEY
+        cmp al, `\n`            ; new line?
+        jne _WORD.skip
+        jmp _WORD.start
+
+section .bss                   ; quick buffer
+word_buffer:
+        resb 32
+
+
+
+
+
+
+
+
+
 
         defcode "DBG",4,DBG
         call debug_y
 
 debug_y:
-        mov rax, 0x2F732F652F79
-        mov qword [0xB8000], rax
+mystring db "hey "
+        mov rsi, mystring
+        mov rcx, 0
+.loop:
+        mov ax, (0x2f << 8)
+        or al, byte [rsi]
+        cmp al, ' '
+        je .done
+        mov word [0xB8000+rcx*2], ax
+        inc rcx
+        inc rsi
+        jmp .loop
+        ; mov rax, 0x2F732F652F79
+        ; mov qword [0xB8000], rax
+        ; mov qword [0xB800C], rax
+.done:
+        hlt
 
 debug_n:
         mov rax, 0x2F4A2F4F2F4b2F4F
@@ -311,10 +557,14 @@ debug_n:
         hlt
 
 section .bss
-align 4096
+alignb 4096
 stack_bottom:
         stack resb 1000000
 stack_top:
+alignb 4096
 r_stack_bottom:
         r_stack resb 1000000
 r_stack_top:
+alignb 4096
+buffer:
+        resb 4096

@@ -35,4 +35,4 @@ $(kernel): $(assembly_object_files) $(linker_script)
 
 build/arch/$(arch)/%.o: src/arch/$(arch)/%.asm
 	@mkdir -p $(shell dirname $@)
-	@nasm -f elf64 -g -F stabs $< -o $@
+	@nasm -f elf64 -g -F dwarf $< -o $@
