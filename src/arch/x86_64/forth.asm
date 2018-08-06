@@ -533,17 +533,17 @@ word_buffer:
         call debug_y
 
 debug_y:
-mystring db "hey "
+        mystring db "hey yr this is a thing woo"
+        db 0x00
         mov rsi, mystring
         mov rcx, 0
 .loop:
         mov ax, (0x2f << 8)
-        or al, byte [rsi]
-        cmp al, ' '
+        or al, byte [mystring + rcx]
+        test al,al
         je .done
-        mov word [0xB8000+rcx*2], ax
+        mov [0xB8000+rcx*2], ax
         inc rcx
-        inc rsi
         jmp .loop
         ; mov rax, 0x2F732F652F79
         ; mov qword [0xB8000], rax
