@@ -16,13 +16,9 @@ long_mode_start:
         ; call forth_start
         call setup_interrupt_table
 
-        ;call do_test
+        call do_test
         jmp start_forth
-        ; try okok first
 
-        ; mov rax, 0x2F4B2F4F2F4B2F4F
-        ; mov qword [0xB8000], rax
-        ; hlt
         int 49
         hlt
 
@@ -32,7 +28,7 @@ setup_interrupt_table:
 
 
 section .bss
-
+global idt
 idt:
         resb 50*16
 

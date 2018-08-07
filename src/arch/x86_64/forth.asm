@@ -1,4 +1,5 @@
 global start_forth
+extern idt
 bits 64
 %define gdtCsSelector 0x08
 %define r_stack_size 4096
@@ -81,7 +82,14 @@ start_forth:
         cld                  ; SI DI Inc on String
         mov rbp, r_stack_top ; point to return stack
         mov rsp, stack_top   ; point to the stack
-        mov [var_SZ], rsp      ; save a pointer to stack top
+        mov [var_SZ], rsp    ; save a pointer to stack top
+        push rax
+        push rcx
+        push rdx
+        call clear_screen    ;
+        ; pop rdx
+        ; pop rcx
+        ; pop rax
         mov rsi, cold_start  ; init interpreter
         NEXT                 ; run
 
@@ -448,6 +456,7 @@ var_%3:
         defcode "DSP!",4,DSPSTORE
         pop rsp
         NEXT
+
 ; ---- Input ----
         defcode "KEY",3,KEY
         call _KEY
@@ -474,10 +483,21 @@ bufftop:
 
 ; ---- Emit ----
         defcode "EMIT",4,EMIT
-        pop rax
+        pop rax                 ; byte to emit
         call _EMIT
         NEXT
-_EMIT
+_EMIT:
+        or ax, [color_b]        ; color the char
+        mov bx, [vga_position]
+        mov [0xB8000+rbx*2], ax
+        add word [vga_position], 1
+        ret
+section .data
+vga_position:
+        dw 0x0
+color_b:
+        dw 0x0F00
+
 
 
 ; ---- Word ----
@@ -532,13 +552,13 @@ word_buffer:
         defcode "DBG",4,DBG
         call debug_y
 
-debug_y:
+debug_s:
         mystring db "hey yr this is a thing woo"
         db 0x00
         mov rsi, mystring
         mov rcx, 0
 .loop:
-        mov ax, (0x2f << 8)
+        mov ax, (0x0f << 8)
         or al, byte [mystring + rcx]
         test al,al
         je .done
@@ -551,10 +571,67 @@ debug_y:
 .done:
         hlt
 
-debug_n:
-        mov rax, 0x2F4A2F4F2F4b2F4F
-        mov qword [0xB8000], rax
+
+        ; interrupt #
+        ; handler
+%macro inthandler 2
+
+        mov rax, %2 ; int_handler
+        mov [idt+%1*16], ax
+        mov word [idt+%1*16+2], 0x08 ; 0x08 is code select
+        mov word [idt+%1*16+4], 0x8e00
+        shr rax, 16
+        mov [idt+%1*16+6], ax
+        shr rax, 16
+        mov [idt+%1*16+8], rax
+
+%endmacro
+
+
+
+debug_y:
+        ; inthandler 22, key_handler
+        ; call os_wait_for_key
+
+        mov rax, 'f'
+        call _EMIT
+
         hlt
+
+clear_screen:
+        push rbp
+        mov ax, (0x00 << 8)
+        mov rcx, 0
+.loop:
+        mov [0xB8000+rcx*2], ax
+        inc rcx
+        mov rbx, rcx
+        cmp rbx, 2000
+        jle .loop
+.done:
+        pop rbp
+        ret
+
+
+
+os_wait_for_key:
+
+        mov ax, 0
+        mov ah, 10h        ; BIOS call to wait for key
+        int 22
+
+        mov [.tmp_buf], ax ; Store resulting keypress
+
+
+        mov ax, [.tmp_buf]
+        ret
+
+.tmp_buf        dw 0
+
+key_handler:
+        iret
+
+
 
 section .bss
 alignb 4096
