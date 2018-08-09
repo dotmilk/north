@@ -5,10 +5,15 @@ extern long_mode_start
 section .text
 bits 32
 start:
+
         mov esp, stack_top
         call check_multiboot
         call check_cpuid
         call check_long_mode
+
+%include "init/housekeeping.asm"
+
+%include "init/init_pic.asm"
 
         call set_up_page_tables
         call enable_paging
@@ -149,6 +154,7 @@ struc gdt_entry
 .granularity: resb 1
 .base_high:   resb 1
 endstruc
+
 
 section .rodata
 gdt64:

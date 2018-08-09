@@ -19,7 +19,7 @@ debug: $(iso)
 	@qemu-system-x86_64 -S -s -curses -cdrom $(iso)
 
 run: $(iso)
-	@qemu-system-x86_64 -curses -cdrom $(iso)
+	@qemu-system-x86_64 -s -curses -cdrom $(iso)
 
 iso: $(iso)
 
@@ -31,9 +31,8 @@ $(iso): $(kernel) $(grub_cfg)
 	@rm -r build/isofiles
 
 $(kernel): $(assembly_object_files) $(linker_script)
-	#@ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(assembly_object_files)
 	@x86_64-elf-ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(assembly_object_files)
 
 build/arch/$(arch)/%.o: src/arch/$(arch)/%.asm
 	@mkdir -p $(shell dirname $@)
-	@nasm -f elf64 -g -F dwarf $< -o $@
+	@nasm -f elf64 -i src/arch/$(arch)/  -g -F dwarf -l $@.lst $< -o $@

@@ -1,0 +1,2 @@
+old line for linking on linux
+@ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(assembly_object_files)

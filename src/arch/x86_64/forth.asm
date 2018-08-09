@@ -4,6 +4,7 @@ bits 64
 %define gdtCsSelector 0x08
 %define r_stack_size 4096
 %define stack_size 4096
+%define input_buffer_size 4096
 
 %define F_IMMED 0x80         ; Immediate flag
 %define F_HIDDEN 0x20        ; Hidden flag
@@ -86,7 +87,7 @@ start_forth:
         push rax
         push rcx
         push rdx
-        call clear_screen    ;
+        ; call clear_screen
         ; pop rdx
         ; pop rcx
         ; pop rax
@@ -463,16 +464,22 @@ var_%3:
         push rax
         NEXT
 _KEY:
-        mov rbx, [currkey]
-        cmp rbx, [bufftop]
-        jge _KEY.exhausted
+        mov rbx, [currkey]      ; is currkey
+        cmp rbx, [bufftop]      ; the top of buffer?
+        jge _KEY.exhausted      ; get more then
         xor rax, rax
         mov al, [rbx]           ; next byte / key
         inc rbx
-        mov [currkey], rbx
+        mov [currkey], rbx      ; update currkey
         ret
 .exhausted:                     ; out of input get more bytes
         ; the place to swap between memory / key input
+        push rsi
+        mov rsi, buffer            ; since buffer is exhausted
+        mov currkey, rsi           ; reset currkey to buff start
+        mov rdx, input_buffer_size ; max bytes we can get
+
+
         hlt
 .err:
         hlt
@@ -550,7 +557,7 @@ word_buffer:
 
 
         defcode "DBG",4,DBG
-        call debug_y
+        call debug_s
 
 debug_s:
         mystring db "hey yr this is a thing woo"
@@ -614,20 +621,6 @@ clear_screen:
 
 
 
-os_wait_for_key:
-
-        mov ax, 0
-        mov ah, 10h        ; BIOS call to wait for key
-        int 22
-
-        mov [.tmp_buf], ax ; Store resulting keypress
-
-
-        mov ax, [.tmp_buf]
-        ret
-
-.tmp_buf        dw 0
-
 key_handler:
         iret
 
@@ -644,4 +637,4 @@ r_stack_bottom:
 r_stack_top:
 alignb 4096
 buffer:
-        resb 4096
+        resb input_buffer_size
