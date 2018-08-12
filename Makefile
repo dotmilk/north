@@ -31,7 +31,8 @@ $(iso): $(kernel) $(grub_cfg)
 	@rm -r build/isofiles
 
 $(kernel): $(assembly_object_files) $(linker_script)
-	@x86_64-elf-ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(assembly_object_files)
+	@ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(assembly_object_files)
+	#@x86_64-elf-ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(assembly_object_files)
 
 build/arch/$(arch)/%.o: src/arch/$(arch)/%.asm
 	@mkdir -p $(shell dirname $@)
