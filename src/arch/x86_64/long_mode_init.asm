@@ -16,6 +16,8 @@ long_mode_start:
         ; call forth_start
         call setup_interrupt_table
 
+        mov rdx, 12
+
 
         ; call do_test
         jmp start_forth

@@ -1,4 +1,6 @@
 global start_forth
+global scratch
+global debug_s
 extern idt
 bits 64
 %define gdtCsSelector 0x08
@@ -84,18 +86,21 @@ start_forth:
         mov rbp, r_stack_top ; point to return stack
         mov rsp, stack_top   ; point to the stack
         mov [var_SZ], rsp    ; save a pointer to stack top
-        push rax
-        push rcx
-        push rdx
+        ; push rax
+        ; push rcx
+        ; push rdx
         ; call clear_screen
         ; pop rdx
         ; pop rcx
         ; pop rax
         mov rsi, cold_start  ; init interpreter
+        push 2
+        push foo
         NEXT                 ; run
 
 section .rodata
 cold_start:
+        dq NUMBER
         dq DBG
 
         defcode "DROP",4,DROP
@@ -593,8 +598,20 @@ _NUMBER:
         mov bl, [rdi]           ; get next char
         inc rdi                 ; update char ptr
 .parse:
-        sub bl,'0'              ; < 0 ?
+        sub bl,'0'              ; < '0'?
         jb _NUMBER.maybeNegate
+        cmp bl, 10              ; <= '9'
+        jb _NUMBER.maybeDone
+        sub bl, 17              ; < 'A'? (17 is 'A'-'0')
+        jb _NUMBER.maybeNegate
+        add bl, 10
+.maybeDone:
+        cmp bl, dl              ; >= BASE?
+        jge _NUMBER.maybeNegate
+
+        add rax, rbx            ; total +
+        dec rcx                 ; we ate another char
+        jnz _NUMBER.loop        ; if there are more loop
 .maybeNegate:
         pop rbx                 ; check stack for
         test rbx, rbx           ; negation flag on stack
@@ -607,9 +624,15 @@ _NUMBER:
         defcode "DBG",4,DBG
         call debug_s
 
-debug_s:
         mystring db "hey yr this is a thing woo"
         db 0x00
+debug_s:
+        push 12
+        pop r8
+        pop r8
+        pop r9
+        mov [scratch], r8
+        mov [scratch+1],r9
         mov rsi, mystring
         mov rcx, 0
 .loop:
@@ -674,7 +697,8 @@ key_handler:
 
 refill_buffer:
         hlt
-
+section .data
+        foo db '12'
 section .bss
 alignb 4096
 stack_bottom:
@@ -689,3 +713,5 @@ buffer:
         resb input_buffer_size
 input_source_id:
         resb 1
+scratch:
+        resb 20
