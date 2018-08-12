@@ -474,13 +474,22 @@ _KEY:
         ret
 .exhausted:                     ; out of input get more bytes
         ; the place to swap between memory / key input
-        push rsi
-        mov rsi, buffer            ; since buffer is exhausted
-        mov currkey, rsi           ; reset currkey to buff start
+        mov rdx, input_source_id
+        cmp rdx, -1             ;
+        je _KEY.eof             ; we are out of in memory 'file'
+        hlt                     ; halt for now
+        push rsi                ; refill from keyboard
+        mov rsi, buffer   ; since buffer is exhausted
+        mov [currkey], rsi           ; reset currkey to buff start
         mov rdx, input_buffer_size ; max bytes we can get
-
-
-        hlt
+        call refill_buffer
+        pop rsi
+.eof:
+        mov rsi, buffer         ; reset our pointers to
+        mov [currkey], rsi     ;  buffer start and currkey
+        ; set bufftop to buffer later?
+        xor rax, rax            ; return 0
+        ret
 .err:
         hlt
 currkey:
@@ -520,17 +529,20 @@ _WORD:
         cmp al, `\\`            ; \ start of comment
         je _WORD.skip           ; skip it if so
         cmp al, ' '             ; is it space?
-        jbe _WORD.start
+        jbe _WORD.start         ; start over
 
         ; search for end of word
         mov rdi, word_buffer
 .slurp:
         stosb                   ; add char to return buffer
         call _KEY               ; get next byte
+        test al, al
+        je _WORD.return
         cmp al, ' '             ; is it space?
         ja _WORD.slurp          ; if not get more
 
         ; return the contents of buffer
+.return:
         sub rdi, word_buffer
         mov rcx, rdi            ; length into rcx
         mov rdi, word_buffer    ; give addr of buffer
@@ -547,13 +559,49 @@ section .bss                   ; quick buffer
 word_buffer:
         resb 32
 
+; ---- Number ----
+        defcode "NUMBER",6,NUMBER
+        pop rcx                 ; str length
+        pop rdi                 ; addr of string
+        call _NUMBER
+        push rax                ; the number
+        push rcx                ; # unparsed chars
+        NEXT
+_NUMBER:
+        xor rax, rax
+        xor rbx, rbx
 
-
-
-
-
-
-
+        test rcx, rcx           ; is there something
+        jnz _NUMBER.continue    ; to parse?
+        ret                     ; nope? bail
+.continue:
+        mov rdx, var_BASE       ; dl holds base
+        mov bl, [rdi]           ; bl is fst char
+        inc rdi                 ; point to next char
+        push rax                ; 0 onto stack
+        cmp bl, '-'
+        jnz _NUMBER.parse       ; if not neg parse it
+        pop rax                 ; it was negative
+        push rbx                ; indicate it is so
+        dec rcx                 ; one less char to parse
+        jnz _NUMBER.loop        ; if we are out of chars
+        pop rbx                 ; string was only '-'
+        mov rcx, 1              ; err: 1 / unparsed char
+        ret	                ; 0 in rax
+.loop:
+        imul rax, rdx           ; rax *= base
+        mov bl, [rdi]           ; get next char
+        inc rdi                 ; update char ptr
+.parse:
+        sub bl,'0'              ; < 0 ?
+        jb _NUMBER.maybeNegate
+.maybeNegate:
+        pop rbx                 ; check stack for
+        test rbx, rbx           ; negation flag on stack
+        jz _NUMBER.done
+        neg rax
+.done:
+        ret
 
 
         defcode "DBG",4,DBG
@@ -624,7 +672,8 @@ clear_screen:
 key_handler:
         iret
 
-
+refill_buffer:
+        hlt
 
 section .bss
 alignb 4096
@@ -638,3 +687,5 @@ r_stack_top:
 alignb 4096
 buffer:
         resb input_buffer_size
+input_source_id:
+        resb 1
