@@ -100,7 +100,6 @@ start_forth:
 
 section .rodata
 cold_start:
-        dq NUMBER
         dq DBG
 
         defcode "DROP",4,DROP
@@ -580,7 +579,7 @@ _NUMBER:
         jnz _NUMBER.continue    ; to parse?
         ret                     ; nope? bail
 .continue:
-        mov rdx, var_BASE       ; dl holds base
+        mov rdx, [var_BASE]       ; dl holds base
         mov bl, [rdi]           ; bl is fst char
         inc rdi                 ; point to next char
         push rax                ; 0 onto stack
@@ -619,6 +618,254 @@ _NUMBER:
         neg rax
 .done:
         ret
+
+        defcode "FIND",4,FIND
+        pop rcx                 ; length
+        pop rdi                 ; addr
+        call _FIND
+        push rax                ; addr of entry or null
+        NEXT
+
+; ---- Find ----
+_FIND:
+        push rsi                ; save for string comp
+
+        mov rdx, var_LATEST     ; name header of latest word
+.start:
+        test rdx, rdx           ; end of linked list?
+        je _FIND.notFound
+        xor rax, rax            ; compare lengths first
+        mov al, [rdx+8]         ; al = flags + length field
+        and al, (F_HIDDEN | F_LENMASK) ; al = name length
+        cmp al, cl                     ; correct length ?
+        jne _FIND.next
+
+        push rcx                ; save length
+        push rdi                ; save the addess repe will change this
+        lea rsi, [rdx+9]        ; dict string
+        repe cmpsb              ; compare while ==
+        pop rdi                 ; restore
+        pop rcx                 ; these
+        jne _FIND.next
+
+        pop rsi                 ; they were the same
+        mov rax, rdx            ; return header pointer
+        ret
+.next:
+        mov rdx, [rdx]
+        jmp _FIND.start
+.notFound:
+        pop rsi                 ; restore rsi
+        xor rax, rax            ; return 0 / not found
+        ret
+
+
+        defcode ">CFA",4,TCFA
+        pop rdi
+        call _TCFA
+        push rdi
+        NEXT
+_TCFA:
+        xor rax,rax
+        add rdi, 8              ; skip link pointer
+        mov al, [rdi]           ; load the flags+len into al
+        inc rdi                 ; skip flags+len byte
+        and al, F_LENMASK       ; now we have just the length
+        add rdi, rax            ; use it to skip the name
+        add rdi, 7              ; 8-byte aligned
+        and rdi, ~7
+        ret
+
+        defword ">DFA",4,TDFA
+        dq TCFA                 ;  >CFA (get code field)
+        dq INCR4                ; skip 2 words
+        dq INCR4
+        dq EXIT
+
+        defcode "CREATE",6,CREATE
+        pop rcx                 ; length of name
+        pop rbx                 ; addr name
+
+        mov rdi, [var_HERE]       ; addr of header
+        mov rax, [var_LATEST]     ; link ptr
+        stosq                   ; store it
+        push rsi
+        mov rsi, rbx            ; word
+        rep movsb               ; copy word
+        pop rsi
+        add rdi, 7              ; align next 4 byte
+        and rdi, ~7
+
+        mov rax, [var_HERE]
+        mov [var_LATEST], rax
+        mov [var_HERE], rdi
+        NEXT
+
+        defcode ",",1,COMMA
+        pop rax
+        call _COMMA
+        NEXT
+_COMMA:
+        mov rdi, [var_HERE]       ; we are here
+        stosq                   ; store ptr
+        mov [var_HERE], rdi       ; update here
+        ret
+
+
+; in immediate mode
+        defcode "[",1,LBRAC,F_IMMED
+        xor rax, rax
+        mov [var_STATE], rax
+        NEXT
+
+; in compile mode
+        defcode "]",1,RBRAC
+        mov rax, 1
+        mov [var_STATE], rax
+        NEXT
+
+        defword ":",1,COLON
+        dq $WORD                 ; name of new word
+        dq CREATE               ; make dictionary entry
+        dq LIT, DOCOL, COMMA    ; append DOCOL (codeword)
+        dq LATEST, FETCH, HIDDEN ; Make word hidden
+        dq RBRAC                 ; compile mode
+        dq EXIT
+
+        defword ";",1,SEMICOLON,F_IMMED
+        dq LIT, EXIT, COMMA     ; append exit so word returns
+        dq LATEST, FETCH, HIDDEN ; show the word now
+        dq LBRAC                 ; immediate mode
+        dq EXIT
+
+        defcode "IMMEDIATE",9,IMMEDIATE,F_IMMED
+        mov rdi, [var_LATEST]   ; latest word
+        add rdi, 8              ; name / flags byte
+        xor byte [rdi], F_IMMED
+        NEXT
+
+        defcode "HIDDEN",6,HIDDEN
+        pop rdi
+        add rdi, 8
+        xor byte [rdi], F_HIDDEN
+        NEXT
+
+        defword "HIDE",4,HIDE
+        dq $WORD                 ; get word (after HIDE)
+        dq FIND                 ; look it up
+        dq HIDDEN               ; hide / unhide it
+        dq EXIT                 ; return
+
+        defcode "'",1,TICK
+        lodsq                   ; get addr of next word + skip it
+        push rax                ; put it on stack
+        NEXT
+
+        defcode "BRANCH",6,BRANCH
+        add rsi,[rsi]           ; add offset
+        NEXT
+
+        defcode "0BRANCH",7,ZBRANCH
+        pop rax
+        test rax, rax           ; is top of stack 0?
+        jz code_BRANCH          ; jump to branch
+        lodsq                   ; otherwise skip
+        NEXT
+
+        defcode "LITSTRING",9,LITSTRING
+        lodsq                   ; length of string
+        push rsi                ; push address of string
+        push rax                ; push length
+        add rsi, rax            ; skip the string
+        add rsi, 7              ; round up to 4 byte
+        and rsi, ~7
+        NEXT
+
+        ; TELL... needs EMIT too
+
+        defword "QUIT",4,QUIT
+        dq RZ, RSPSTORE         ; R0 RSP!
+        dq INTERPRET            ; interpret next word
+        dq BRANCH, -16          ; looooop
+
+
+; ---- Xtra-Beefy Code ----
+        defcode "INTERPRET",9,INTERPRET
+        call _WORD              ; rcx length, rdi ptr to word
+
+        xor rax, rax
+        mov [interpret_is_lit], rax ; set lit flag to not lit
+        call _FIND                  ; rax is ptr to header or 0
+        test rax, rax
+        jz code_INTERPRET.notFound
+
+        ; it was found
+        mov rdi, rax            ; rdi is dict entry
+        mov al, [rdi+8]         ; name + flags
+        push ax                 ; save it for now
+        call _TCFA              ; convert EDI to codeword
+        pop ax
+        and al, F_IMMED
+        mov rax, rdi
+        jnz code_INTERPRET.execute ; if IMMED exec
+
+        jmp code_INTERPRET.whichAction ; otherwise decide
+.notFound:
+        inc qword [interpret_is_lit]
+        call _NUMBER            ; number in eax
+        test rcx, rcx           ; rcx > 0 then no error
+        jnz code_INTERPRET.err  ; err is blank stub for now
+        mov rbx, rax            ; back up value
+        mov rax, LIT            ; make it LIT
+.whichAction:
+        mov rdx, var_STATE
+        test rdx, rdx
+        jz code_INTERPRET.execute
+
+        ; to compile just append word to dictionary def
+        call _COMMA
+        mov rcx, [interpret_is_lit]
+        test rcx, rcx           ; was it literal?
+        jz code_INTERPRET.next
+        mov rax, rbx            ; Yes / Lit is followed by #
+        call _COMMA
+.next:
+        NEXT
+.execute:
+        mov rcx, [interpret_is_lit]
+        test rcx, rcx
+        jnz code_INTERPRET.execLit
+        jmp [rax]
+.execLit:                       ; if exec lit, push on stack only
+        push rbx
+        NEXT
+.err:
+        hlt
+section .data
+align 8
+interpret_is_lit:
+        dq 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
         defcode "DBG",4,DBG
@@ -701,12 +948,12 @@ section .data
         foo db '12'
 section .bss
 alignb 4096
-stack_bottom:
-        stack resb 1000000
+stack:
+        resw 1000
 stack_top:
 alignb 4096
 r_stack_bottom:
-        r_stack resb 1000000
+         resw 1000
 r_stack_top:
 alignb 4096
 buffer:
