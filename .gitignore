@@ -1,2 +1,4 @@
 build
 .gdb_history
+.bochsrc
+bochsout.txt
