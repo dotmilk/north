@@ -93,6 +93,8 @@ start_forth:
         ; pop rdx
         ; pop rcx
         ; pop rax
+        ; need to set bufftop and currkey to
+        ; input_buffer_ptr
         mov rsi, cold_start  ; init interpreter
         push 2
         push foo
@@ -415,6 +417,9 @@ var_%3:
         defvar "LATEST",6,LATEST ; initial should be last builtin name_SYSCALL0
         defvar "S0",2,SZ
         defvar "BASE",4,BASE,10
+        defvar "INPUT_BUFFER_SOURCE",19,IBS,0,-1
+        defvar "INPUT_BUFFER",12,IB
+        defvar "INPUT_BUFFER_LENGTH",19,IBL
 
 %macro defconst 4-5 0
         defcode %1, %2, %3, %5
@@ -847,7 +852,16 @@ interpret_is_lit:
         dq 0
 
 
+        defcode "CHAR",4,CHAR
+        call _WORD              ; rcx len / rdi ptr
+        xor rax, rax
+        mov al, [rdi]           ; first char in al
+        push rax                ; push it onto stack
+        NEXT
 
+        defcode "EXECUTE",7,EXECUTE
+        pop rax                 ; get xt into rax
+        jmp [rax]               ; jump there
 
 
 

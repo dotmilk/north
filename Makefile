@@ -8,6 +8,12 @@ assembly_source_files := $(wildcard src/arch/$(arch)/*.asm)
 assembly_object_files := $(patsubst src/arch/$(arch)/%.asm, \
 	build/arch/$(arch)/%.o, $(assembly_source_files))
 
+forth_source_files := $(wildcard src/arch/$(arch)/forth/*.fs)
+forth_object_files := $(patsubst src/arch/$(arch)/forth/%.fs, \
+	build/arch/$(arch)/forth/%.o, $(forth_source_files))
+
+# builtin_files := $(patsubst src/arch/$(arch)/forth/builtin-files.asm)
+
 .PHONY: all clean run iso
 
 all: $(kernel)
@@ -30,10 +36,19 @@ $(iso): $(kernel) $(grub_cfg)
 	@grub-mkrescue -o $(iso) build/isofiles 2> /dev/null
 	@rm -r build/isofiles
 
-$(kernel): $(assembly_object_files) $(linker_script)
-	#@ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(assembly_object_files)
+$(kernel): $(assembly_object_files) $(forth_object_files) builtin-files.asm $(linker_script)
 	@x86_64-elf-ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(assembly_object_files)
 
 build/arch/$(arch)/%.o: src/arch/$(arch)/%.asm
 	@mkdir -p $(shell dirname $@)
 	@nasm -f elf64 -i src/arch/$(arch)/  -g -F dwarf -l $@.lst $< -o $@
+
+build/arch/$(arch)/forth/%.o: src/arch/$(arch)/forth/%.fs
+	@mkdir -p $(shell dirname $@)
+	@cd $(shell dirname $<); \
+	x86_64-elf-objcopy -I binary -O elf64-x86-64 -Bi386 $(shell basename $<) ../../../../$@;
+
+builtin-files.asm: $(forth_source_files)
+	@echo "CALLED"
+	cd src/arch/$(arch)/include ; \
+	sh generate-builtin-files.sh ../forth/$(shell basename $<)
