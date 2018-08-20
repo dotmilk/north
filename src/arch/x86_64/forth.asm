@@ -95,14 +95,17 @@ start_forth:
         ; pop rax
         ; need to set bufftop and currkey to
         ; input_buffer_ptr
+        mov qword [currkey], _binary_forth_core_fs_start
+        mov r8, _binary_forth_core_fs_start
+        add r8, [_binary_forth_core_fs_size]
+        mov [bufftop], r8
+
         mov rsi, cold_start  ; init interpreter
-        push 2
-        push foo
         NEXT                 ; run
 
 section .rodata
 cold_start:
-        dq DBG
+        dq QUIT
 
         defcode "DROP",4,DROP
         pop rax
@@ -414,7 +417,7 @@ var_%3:
 
         defvar "STATE",5,STATE
         defvar "HERE",4,HERE
-        defvar "LATEST",6,LATEST ; initial should be last builtin name_SYSCALL0
+        defvar "LATEST",6,LATEST,0,name_NOOP ; initial should be last builtin name_SYSCALL0
         defvar "S0",2,SZ
         defvar "BASE",4,BASE,10
         defvar "INPUT_BUFFER_SOURCE",19,IBS,0,-1
@@ -498,6 +501,7 @@ _KEY:
         mov [currkey], rsi     ;  buffer start and currkey
         ; set bufftop to buffer later?
         xor rax, rax            ; return 0
+        call debug_s
         ret
 .err:
         hlt
@@ -963,6 +967,7 @@ refill_buffer:
         hlt
 section .data
         foo db '12'
+        input_source_id dq -1
 section .bss
 alignb 4096
 stack:
@@ -975,7 +980,6 @@ r_stack_top:
 alignb 4096
 buffer:
         resb input_buffer_size
-input_source_id:
-        resb 1
+
 scratch:
         resb 20

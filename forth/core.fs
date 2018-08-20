@@ -1,1 +1,2 @@
-: foo dup dup ;
+: two 1 1 + ;
+two
