@@ -863,8 +863,11 @@ interpret_is_lit:
         pop rax                 ; get xt into rax
         jmp [rax]               ; jump there
 
+%include "include/builtin-files.asm"
 
-
+        defcode "NOOP",4,NOOP
+        nop
+        NEXT
 
 
 
