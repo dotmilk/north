@@ -95,9 +95,12 @@ start_forth:
         ; pop rax
         ; need to set bufftop and currkey to
         ; input_buffer_ptr
-        mov qword [currkey], _binary_forth_core_fs_start
-        mov r8, _binary_forth_core_fs_start
-        add r8, [_binary_forth_core_fs_size]
+        xor r8,r8
+        xor r9,r9
+        lea r8, [_binary_forth_core_fs_size] ; size
+        mov r9, _binary_forth_core_fs_start
+        mov [currkey], r9
+        add r8, r9
         mov [bufftop], r8
 
         mov rsi, cold_start  ; init interpreter
@@ -416,10 +419,10 @@ var_%3:
 %endmacro
 
         defvar "STATE",5,STATE
-        defvar "HERE",4,HERE
+        defvar "HERE",4,HERE,0,__DS
         defvar "LATEST",6,LATEST,0,name_NOOP ; initial should be last builtin name_SYSCALL0
         defvar "S0",2,SZ
-        defvar "BASE",4,BASE,10
+        defvar "BASE",4,BASE,0,10
         defvar "INPUT_BUFFER_SOURCE",19,IBS,0,-1
         defvar "INPUT_BUFFER",12,IB
         defvar "INPUT_BUFFER_LENGTH",19,IBL
@@ -639,7 +642,7 @@ _NUMBER:
 _FIND:
         push rsi                ; save for string comp
 
-        mov rdx, var_LATEST     ; name header of latest word
+        mov rdx, [var_LATEST]     ; name header of latest word
 .start:
         test rdx, rdx           ; end of linked list?
         je _FIND.notFound
@@ -698,6 +701,9 @@ _TCFA:
         mov rdi, [var_HERE]       ; addr of header
         mov rax, [var_LATEST]     ; link ptr
         stosq                   ; store it
+
+        mov al,cl               ; length
+        stosb                   ; store it
         push rsi
         mov rsi, rbx            ; word
         rep movsb               ; copy word
@@ -822,12 +828,12 @@ _COMMA:
 .notFound:
         inc qword [interpret_is_lit]
         call _NUMBER            ; number in eax
-        test rcx, rcx           ; rcx > 0 then no error
+        test rcx, rcx           ; rcx > 0 then error
         jnz code_INTERPRET.err  ; err is blank stub for now
         mov rbx, rax            ; back up value
         mov rax, LIT            ; make it LIT
 .whichAction:
-        mov rdx, var_STATE
+        mov rdx, [var_STATE]
         test rdx, rdx
         jz code_INTERPRET.execute
 
@@ -849,11 +855,13 @@ _COMMA:
         push rbx
         NEXT
 .err:
+
         hlt
 section .data
 align 8
 interpret_is_lit:
         dq 0
+
 
 
         defcode "CHAR",4,CHAR
@@ -983,3 +991,5 @@ buffer:
 
 scratch:
         resb 20
+__DS:
+        resq 262144
