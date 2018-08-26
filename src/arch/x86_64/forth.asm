@@ -110,28 +110,28 @@ section .rodata
 cold_start:
         dq QUIT
 
-        defcode "DROP",4,DROP
+        defcode "drop",4,DROP
         pop rax
         NEXT
 
-        defcode "SWAP",4,SWAP
+        defcode "swap",4,SWAP
         pop rax
         pop rbx
         push rax
         push rbx
         NEXT
 
-        defcode "DUP",3,DUP
+        defcode "dup",3,DUP
         mov rax, [rsp]
         push rax
         NEXT
 
-        defcode "OVER",4,OVER
+        defcode "over",4,OVER
         mov rax, [rsp + 8]
         push rax
         NEXT
 
-        defcode "ROT",3,ROT
+        defcode "rot",3,ROT
         pop rax
         pop rbx
         pop rcx
@@ -140,7 +140,7 @@ cold_start:
         push rbx
         NEXT
 
-        defcode "-ROT",4,NROT
+        defcode "-rot",4,NROT
         pop rax
         pop rbx
         pop rcx
@@ -149,19 +149,19 @@ cold_start:
         push rcx
         NEXT
 
-        defcode "2DROP",5,TWODROP
+        defcode "2drop",5,TWODROP
         pop rax
         pop rax
         NEXT
 
-        defcode "2DUP",4,TWODUP
+        defcode "2dup",4,TWODUP
         mov rax, [rsp]
         mov rbx, [rsp+8]
         push rbx
         push rax
         NEXT
 
-        defcode "2SWAP",5,TWOSWAP
+        defcode "2swap",5,TWOSWAP
         pop rax
         pop rbx
         pop rcx
@@ -172,7 +172,7 @@ cold_start:
         push rcx
         NEXT
 
-        defcode "?DUP",4,QDUP
+        defcode "?dup",4,QDUP
         mov rax, [rsp]
         test rax, rax
         jz .l1
@@ -204,6 +204,16 @@ cold_start:
         sub qword [rsp], 8
         NEXT
 
+        ; defcode "<<",2,LSHIFT
+        ; pop rax
+        ; shl [rsp], rax
+        ; NEXT
+
+        ; defcode ">>",2,RSHIFT
+        ; pop rax
+        ; shl [rsp], rax
+        ; NEXT
+
         defcode "+",1,ADD
         pop rax
         add [rsp], rax
@@ -221,7 +231,7 @@ cold_start:
         push rax
         NEXT
 
-        defcode "/MOD",4,DIVMOD
+        defcode "/mod",4,DIVMOD
         xor rdx, rdx
         pop rbx
         pop rax
@@ -320,32 +330,32 @@ cold_start:
         pushCmp
         NEXT
 
-        defcode "AND",3,AND
+        defcode "and",3,AND
         pop rax
         and [rsp], rax
         NEXT
 
-        defcode "OR",2,OR
+        defcode "or",2,OR
         pop rax
         or [rsp], rax
         NEXT
 
-        defcode "XOR",3,XOR
+        defcode "xor",3,XOR
         pop rax
         xor [rsp], rax
         NEXT
 
-        defcode "INVERT",6,INVERT
+        defcode "invert",6,INVERT
         not qword [rsp]
         NEXT
 
 ; returning from forth words
-        defcode "EXIT",4,EXIT
+        defcode "exit",4,EXIT
         POPRSP rsi
         NEXT
 
 ; like next but push instead of jmp
-        defcode "LIT",3,LIT
+        defcode "lit",3,LIT
         lodsq
         push rax
         NEXT
@@ -369,6 +379,12 @@ cold_start:
         add [rbx], rax
         NEXT
 
+        defcode "1+!",3,ADDONESTORE
+        pop rbx                 ; addr
+        mov rax, 1
+        add [rbx], rax
+        NEXT
+
         defcode "-1",2,SUBSTORE
         pop rbx                 ; addr
         pop rax                 ; operand 1
@@ -377,20 +393,20 @@ cold_start:
 
 ; byte level memory ops
 
-        defcode "C!",2,STOREBYTE
+        defcode "c!",2,STOREBYTE
         pop rbx                 ; addr
         pop rax                 ; dat
         mov [rbx], al
         NEXT
 
-        defcode "C@",2,FETCHBYTE
+        defcode "c@",2,FETCHBYTE
         pop rbx                 ; addr
         xor rax, rax            ; clear rax
         mov al, [rbx]
         push rax
         NEXT
 
-        defcode "C@C!",4,CCOPY
+        defcode "c@c!",4,CCOPY
         mov rbx, [rsp+8]        ; source addr
         mov al, [rbx]           ; source char
         pop rdi                 ; destination addr
@@ -399,7 +415,7 @@ cold_start:
         inc qword [rsp+8]
         NEXT
 
-        defcode "CMOVE",5,CMOVE
+        defcode "cmove",5,CMOVE
         mov rdx, rsi            ; keep rsi
         pop rcx                 ; length
         pop rdi                 ; destination
@@ -418,11 +434,11 @@ var_%3:
         dq %5
 %endmacro
 
-        defvar "STATE",5,STATE
-        defvar "HERE",4,HERE,0,__DS
-        defvar "LATEST",6,LATEST,0,name_NOOP ; initial should be last builtin name_SYSCALL0
-        defvar "S0",2,SZ
-        defvar "BASE",4,BASE,0,10
+        defvar "state",5,STATE
+        defvar "here",4,HERE,0,__DS
+        defvar "latest",6,LATEST,0,name_NOOP ; initial should be last builtin name_SYSCALL0
+        defvar "s0",2,SZ
+        defvar "base",4,BASE,0,10
         defvar "INPUT_BUFFER_SOURCE",19,IBS,0,-1
         defvar "INPUT_BUFFER",12,IB
         defvar "INPUT_BUFFER_LENGTH",19,IBL
@@ -433,48 +449,48 @@ var_%3:
 	NEXT
 %endmacro
 
-        defconst "R0",2,RZ,r_stack_top
-        defconst "DOCOL",5,__DOCOL,DOCOL
+        defconst "r0",2,RZ,r_stack_top
+        defconst "docol",5,__DOCOL,DOCOL
         defconst "F_IMMED",7,__F_IMMED,F_IMMED
         defconst "F_HIDDEN",8,__F_HIDDDEN,F_HIDDEN
         defconst "F_LENMASK",9,__F_LENMASK,F_LENMASK
 
 ; return stack
-        defcode ">R",2,TOR
+        defcode ">r",2,TOR
         pop rax                 ; from param stack
         PUSHRSP rax             ; to return stack
         NEXT
 
-        defcode "R>",2,FROMR
+        defcode "r>",2,FROMR
         POPRSP rax              ; from return stack
         push rax                ; to parameter stack
         NEXT
 
-        defcode "RSP@",4,RSPFETCH
+        defcode "rsp@",4,RSPFETCH
         push rbp
         NEXT
 
-        defcode "RSP!",4,RSPSTORE
+        defcode "rsp!",4,RSPSTORE
         pop rbp
         NEXT
 
-        defcode "RDROP",5,RDROP
+        defcode "rdrop",5,RDROP
         add rbp, 8
         NEXT
 
 ; Parameter stack
 
-        defcode "DSP@",4,DSPFETCH
+        defcode "dsp@",4,DSPFETCH
         mov rax, rsp
         push rax
         NEXT
 
-        defcode "DSP!",4,DSPSTORE
+        defcode "dsp!",4,DSPSTORE
         pop rsp
         NEXT
 
 ; ---- Input ----
-        defcode "KEY",3,KEY
+        defcode "key",3,KEY
         call _KEY
         push rax
         NEXT
@@ -514,7 +530,7 @@ bufftop:
         dq buffer
 
 ; ---- Emit ----
-        defcode "EMIT",4,EMIT
+        defcode "emit",4,EMIT
         pop rax                 ; byte to emit
         call _EMIT
         NEXT
@@ -533,7 +549,7 @@ color_b:
 
 
 ; ---- Word ----
-        defcode "WORD",4,$WORD
+        defcode "word",4,$WORD
         call _WORD
         push rdi                ; base addr of word
         push rcx                ; length
@@ -576,7 +592,7 @@ word_buffer:
         resb 32
 
 ; ---- Number ----
-        defcode "NUMBER",6,NUMBER
+        defcode "number",6,NUMBER
         pop rcx                 ; str length
         pop rdi                 ; addr of string
         call _NUMBER
@@ -631,7 +647,7 @@ _NUMBER:
 .done:
         ret
 
-        defcode "FIND",4,FIND
+        defcode "find",4,FIND
         pop rcx                 ; length
         pop rdi                 ; addr
         call _FIND
@@ -672,7 +688,7 @@ _FIND:
         ret
 
 
-        defcode ">CFA",4,TCFA
+        defcode ">cfa",4,TCFA
         pop rdi
         call _TCFA
         push rdi
@@ -688,13 +704,13 @@ _TCFA:
         and rdi, ~7
         ret
 
-        defword ">DFA",4,TDFA
+        defword ">dfa",4,TDFA
         dq TCFA                 ;  >CFA (get code field)
         dq INCR4                ; skip 2 words
         dq INCR4
         dq EXIT
 
-        defcode "CREATE",6,CREATE
+        defcode "create",6,CREATE
         pop rcx                 ; length of name
         pop rbx                 ; addr name
 
@@ -753,19 +769,19 @@ _COMMA:
         dq LBRAC                 ; immediate mode
         dq EXIT
 
-        defcode "IMMEDIATE",9,IMMEDIATE,F_IMMED
+        defcode "immediate",9,IMMEDIATE,F_IMMED
         mov rdi, [var_LATEST]   ; latest word
         add rdi, 8              ; name / flags byte
         xor byte [rdi], F_IMMED
         NEXT
 
-        defcode "HIDDEN",6,HIDDEN
+        defcode "hidden",6,HIDDEN
         pop rdi
         add rdi, 8
         xor byte [rdi], F_HIDDEN
         NEXT
 
-        defword "HIDE",4,HIDE
+        defword "hide",4,HIDE
         dq $WORD                 ; get word (after HIDE)
         dq FIND                 ; look it up
         dq HIDDEN               ; hide / unhide it
@@ -776,18 +792,18 @@ _COMMA:
         push rax                ; put it on stack
         NEXT
 
-        defcode "BRANCH",6,BRANCH
+        defcode "branch",6,BRANCH
         add rsi,[rsi]           ; add offset
         NEXT
 
-        defcode "0BRANCH",7,ZBRANCH
+        defcode "0branch",7,ZBRANCH
         pop rax
         test rax, rax           ; is top of stack 0?
         jz code_BRANCH          ; jump to branch
         lodsq                   ; otherwise skip
         NEXT
 
-        defcode "LITSTRING",9,LITSTRING
+        defcode "litstring",9,LITSTRING
         lodsq                   ; length of string
         push rsi                ; push address of string
         push rax                ; push length
@@ -798,14 +814,14 @@ _COMMA:
 
         ; TELL... needs EMIT too
 
-        defword "QUIT",4,QUIT
+        defword "quit",4,QUIT
         dq RZ, RSPSTORE         ; R0 RSP!
         dq INTERPRET            ; interpret next word
         dq BRANCH, -16          ; looooop
 
 
 ; ---- Xtra-Beefy Code ----
-        defcode "INTERPRET",9,INTERPRET
+        defcode "interpret",9,INTERPRET
         call _WORD              ; rcx length, rdi ptr to word
 
         xor rax, rax
@@ -862,25 +878,26 @@ align 8
 interpret_is_lit:
         dq 0
 
+        defcode "dnoop",5,dnoop
+        nop
+        NEXT
 
-
-        defcode "CHAR",4,CHAR
+        defcode "char",4,CHAR
         call _WORD              ; rcx len / rdi ptr
         xor rax, rax
         mov al, [rdi]           ; first char in al
         push rax                ; push it onto stack
         NEXT
 
-        defcode "EXECUTE",7,EXECUTE
+        defcode "execute",7,EXECUTE
         pop rax                 ; get xt into rax
         jmp [rax]               ; jump there
 
 %include "include/builtin-files.asm"
 
-        defcode "NOOP",4,NOOP
+        defcode "noop",4,NOOP
         nop
         NEXT
-
 
 
 
