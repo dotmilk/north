@@ -427,7 +427,7 @@ cold_start:
 %macro defvar 3-5 0,0
         defcode %1, %2, %3, %4
         push qword var_%3
-        NEXT
+        NEXTb
 section .data
 align 8
 var_%3:
