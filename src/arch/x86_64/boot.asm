@@ -6,7 +6,7 @@ section .text
 bits 32
 start:
 
-        mov esp, stack_top
+        mov esp, s_t
         call check_multiboot
         call check_cpuid
         call check_long_mode
@@ -192,6 +192,6 @@ p3_table:
         resb 4096
 p2_table:
         resb 4096
-stack_bottom:
+s_b:
         resb 64
-stack_top:
+s_t:

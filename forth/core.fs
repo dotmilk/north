@@ -1,3 +1,4 @@
+inoop
 : / /mod swap drop ;
 : mod /mod drop ;
 : wordsize 8 ;
@@ -123,6 +124,7 @@
 : nip ( x y -- y ) swap drop ;
 : tuck ( x y -- y x y ) swap over ;
 : pick ( x_u ... x_1 x_0 u -- x_u ... x_1 x_0 x_u )
+    noop
     1+ ( +1 for the u on the stack )
     wordsize * ( offset is count * wordsize )
     dsp@ + ( stack ptr + offset )
@@ -133,6 +135,8 @@
 : hex ( -- ) 16 base ! ;
 
 \ missing . and various integer printing ops
+
+
 ( c a b within true if a <= c and c < b  )
 ( without ifs over - >r - r> u< )
 : within
@@ -176,11 +180,11 @@
             key ( get char of string )
             dup '"' <>
         while
-                ,c ( copy it )
+                c, ( copy it )
         repeat
         drop ( drop the " char at end )
         dup ( saved addr for length )
-        here 2 swap - ( calc length )
+        here @ swap - ( calc length )
         8- ( remove length word )
         swap ! ( backfill length )
         align ( get us to multiple of 8 bytes )
@@ -352,6 +356,7 @@
 ;
 
 : catch ( xt -- exn? )
+    noop
     dsp@ 8+ >r ( p-stack ptr save +8 for xt on rstack )
     ' exception-marker 8+ ( push rdrop address )
     >r ( onto return stack to fake return addr )
@@ -359,6 +364,7 @@
 ;
 
 : throw ( n -- )
+    noop
     ?dup if ( only if exception code <> 0 )
         rsp@ ( return stack ptr )
         begin
@@ -386,7 +392,7 @@
 ;
 
 : abort ( -- )
-    0 1- throw
+   0 1- throw
 ;
 
 \ c strings missing
@@ -411,14 +417,14 @@ hex
 : w 66 ;
 
 ( i386 registers )
-: rax IMMEDIATE 0 ;
-: rcx IMMEDIATE 1 ;
-: rdx IMMEDIATE 2 ;
-: rbx IMMEDIATE 3 ;
-: rsp IMMEDIATE 4 ;
-: rbp IMMEDIATE 5 ;
-: rsi IMMEDIATE 6 ;
-: rdi IMMEDIATE 7 ;
+: rax immediate 0 ;
+: rcx immediate 1 ;
+: rdx immediate 2 ;
+: rbx immediate 3 ;
+: rsp immediate 4 ;
+: rbp immediate 5 ;
+: rsi immediate 6 ;
+: rdi immediate 7 ;
 
 ( stack instructions )
 : push immediate 50 + c, ;
@@ -473,11 +479,13 @@ hide =next
 
 \ end regular jonesforth phew.....
 
+
 : alias
     word create word find >cfa @
-    dup docol = if abort then
+    \ skip check for now dup docol = if abort then
     ,
 ; immediate
+
 
 alias (here) here
 alias (create) create
@@ -485,9 +493,10 @@ alias (find) find
 alias (word) word
 alias (key) key
 
-            \ : does> r> latest @ >dfa ! ;
+\ hide non-standard jonesforth words:
 
 hide depth
+\ hide .s
 hide here
 hide allot
 hide create
@@ -495,13 +504,105 @@ hide variable
 hide true
 hide find
 hide while
-    hide repeat
+hide repeat
 hide word
 \ hide key
-( apparently lit is the same as ' whatever )
-hide '
+hide ' ( lit is identical )
+
+\ replace non-standard forth words:
+
+: depth ( -- +n ) s0 @ 8- dsp@ - 8 / ;
+
+: here ( -- addr ) (here) @ ;
+: allot ( n -- ) here + (here) ! ;
+: create ( "<spaces>name" -- ) (word) (create) dodoes , 0 , ;
+: variable ( "<spaces>name" -- ) create 1 cells allot ;
+: true ( -- true ) -1 ;
+: count ( caddr1 -- caddr2 u ) dup c@ swap 1+ swap ;
+\ : key ( -- char ) get ;
+: ' ( "<spaces>name" -- xt ) (word) (find) >cfa ;
+
+: find ( c-addr -- c-addr 0 | xt 1 | xt -1 )
+  dup count (find) dup 0= if false exit then
+  nip dup 8+ @ F_IMMED and 0= if >cfa -1 exit then
+  >cfa 1
+;
+
+: while ( c: dest -- orig dest )
+	['] 0branch ,	\ compile 0branch
+	here 		\ save location of the offset2 on the stack
+	swap		\ get the original offset (from begin)
+	0 ,		\ compile a dummy offset2
+; immediate
+
+: repeat ( c: orig dest -- )
+	['] branch ,	\ compile branch
+	here - ,	\ and compile it after branch
+	dup
+	here swap -	\ calculate the offset2
+	swap !		\ and back-fill it in the original location
+; immediate
+
+: word ( char "<chars>ccc<char>" -- c-addr )
+  0 begin drop
+  source nip >in @ <= if drop 0 here c! here exit then \ nothing in buffer
+  (key) 2dup <> until \ skip leading delimiters
+  here -rot begin rot 1+ 2dup c! -rot drop \ store char
+  source nip >in @ <= if drop here - here c! here exit then \ exhausted
+  (key) 2dup = until 2drop here - here c! here
+;
+
+: add5 5 5 + ;
+\ later nop
+
+: postpone ( "<spaces>name" -- )
+  bl word find [compile] dup 0= if abort then
+  -1 = if
+    ['] lit , , ['] , ,
+  else
+    ,
+  then
+; immediate
+
+: <builds (word) (create) dodoes , 0 , ;
+: does> r> latest @ >cfa ! ;
+: >body ( xt -- a-addr ) 2 cells + ;
+
+: defer create ['] abort , does> @ execute ;
+
+\ : defer@
+\     >dfa @
+\ ;
+\ : defer!
+\     >dfa !
+\ ;
 
 
+: defer@ ( xt1 -- xt2 )
+  >body @ ;
+
+: defer! ( xt2 xt1 -- )
+  >body ! ;
+
+: <is> ( xt "name" -- )
+    ' defer! ;
+
+: [is] ( compilation: "name" -- ; run-time: xt -- )
+    postpone ['] postpone defer! ; immediate
+
+: is
+  state @ if
+    postpone [is]
+  else
+    <is>
+  then ; immediate
+
+: action-of
+ state @ if
+   POSTPONE ['] POSTPONE defer@
+ else
+   ' defer@
+then ; immediate
 
 
 1 constant 8bits
@@ -514,18 +615,18 @@ hide '
 \ : end-struct constant ;
 
 
-: true 1 ;
-: on true swap ! ;
-: off false swap ! ;
+\ : true 1 ;
+\ : on true swap ! ;
+\ : off false swap ! ;
 
-: 2+ 2 + ;
-: 2- 2 - ;
-: negate 0 swap 1 ;
-: not 0= ;
-: 0! 0 swap ! ;
+\ : 2+ 2 + ;
+\ : 2- 2 - ;
+\ : negate 0 swap 1 ;
+\ : not 0= ;
+\ : 0! 0 swap ! ;
 : 2+! 2 swap +! ;
-: and! dup @ rot and swap ! ;
-: or! dup @ rot or swap ! ;
+\ : and! dup @ rot and swap ! ;
+\ : or! dup @ rot or swap ! ;
 
 : decimal 10 base ! ;
 : hex 16 base ! ;
@@ -548,27 +649,17 @@ char o display
 char o display
 char t display
 
+defer num
 
-dnoop
-: literal immediate
-          ' lit , \ compile lit
-          , \ now the literal itself (stack)
-;
+ : ab num ;
 
-: ':'
-      [ \ immediate mode
-      char : \ 58 / : on stack
-      ] \ continue compile
-             literal \ lit 58
-      ;
+ : n1 12 ;
+ : n2 13 ;
 
-:
+ ' n2 is num
 
-: ';' [ char ; ] literal ;
-: '(' [ char ( ] literal ;
-: ')' [ char ) ] literal ;
-: '"' [ char " ] literal ;
-: 'A' [ char A ] literal ;
-: '0' [ char 0 ] literal ;
-: '-' [ char - ] literal ;
-: '.' [ char . ] literal ;
+num
+
+
+\ : nt' (word) (find) ;
+\ : comp' nt' >cfa

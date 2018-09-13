@@ -53,6 +53,22 @@ code_%3:
         jmp [rax]            ; go there
 %endmacro
 
+%macro compileInstruction 1
+        dq LIT
+        %1
+        dq COMMA
+%endmacro
+
+%macro NEXT_COMP 0
+        dq LIT
+        lodsq
+        dq COMMA
+        dq LIT
+        jmp [rax]
+        dq COMMA
+%endmacro
+
+
 %macro PUSHRSP 1
         lea rbp, [rbp-8]     ; offset r_stack
         mov [rbp], %1        ; put val on r_stack
@@ -72,6 +88,9 @@ code_%3:
                              ; mov     eax,[ecx]
 section .text
 align 8
+
+_NEXT:
+        NEXT
 
 DOCOL:
         PUSHRSP rsi          ; return ptr on r_stack
@@ -93,15 +112,17 @@ start_forth:
         ; pop rdx
         ; pop rcx
         ; pop rax
-        ; need to set bufftop and currkey to
+        ; need to set bufftop and buffpos to
         ; input_buffer_ptr
+        mov r10, __DS
+        mov [var_HERE], r10
         xor r8,r8
         xor r9,r9
+        mov [buffpos], r9
         lea r8, [_binary_forth_core_fs_size] ; size
         mov r9, _binary_forth_core_fs_start
-        mov [currkey], r9
-        add r8, r9
-        mov [bufftop], r8
+        mov [buffsize], r8
+        mov [buffaddr], r9
 
         mov rsi, cold_start  ; init interpreter
         NEXT                 ; run
@@ -249,6 +270,7 @@ cold_start:
 ; put result on stack
 %macro pushCmp 0
         movzx rax, al
+        neg rax                 ; forth true = -1
         push rax
 %endmacro
 
@@ -358,7 +380,7 @@ cold_start:
         defcode "lit",3,LIT
         lodsq
         push rax
-        NEXT
+       NEXT
 
 ; Direct Memory operations
         defcode "!",1,STORE
@@ -423,19 +445,29 @@ cold_start:
         rep movsb               ; sourc -> destination
         mov rsi, rdx            ; restore rsi
 
+        defcode "fill",4,fill
+        pop rax                 ; char
+        pop rcx                 ; count
+        pop rdi                 ; addr
+        cmp rcx,0
+        jle _fillDone
+        rep stosb
+_fillDone:
+        NEXT
+
 ; Builtin variables
 %macro defvar 3-5 0,0
         defcode %1, %2, %3, %4
         push qword var_%3
-        NEXTb
+        NEXT
 section .data
 align 8
 var_%3:
         dq %5
 %endmacro
-
+        defvar "word_count",10,WC,0,word_lines
         defvar "state",5,STATE
-        defvar "here",4,HERE,0,__DS
+        defvar "here",4,HERE
         defvar "latest",6,LATEST,0,name_NOOP ; initial should be last builtin name_SYSCALL0
         defvar "s0",2,SZ
         defvar "base",4,BASE,0,10
@@ -466,6 +498,11 @@ var_%3:
         push rax                ; to parameter stack
         NEXT
 
+        defcode "r@",2,RFETCH   ; bb4w...why not alias rsp@?
+        mov rax, [rbp]
+        push rax
+        NEXT
+
         defcode "rsp@",4,RSPFETCH
         push rbp
         NEXT
@@ -492,16 +529,19 @@ var_%3:
 ; ---- Input ----
         defcode "key",3,KEY
         call _KEY
+
         push rax
         NEXT
 _KEY:
-        mov rbx, [currkey]      ; is currkey
-        cmp rbx, [bufftop]      ; the top of buffer?
+        inc qword [word_lines]
+        mov rbx, [buffpos]      ; is buffpos
+        cmp rbx, [buffsize]      ; the top of buffer?
         jge _KEY.exhausted      ; get more then
         xor rax, rax
+        mov rbx, [buffaddr]     ; buffer start +
+        add rbx, [buffpos]      ; our position =
         mov al, [rbx]           ; next byte / key
-        inc rbx
-        mov [currkey], rbx      ; update currkey
+        inc qword [buffpos]     ; update buffpos
         ret
 .exhausted:                     ; out of input get more bytes
         ; the place to swap between memory / key input
@@ -511,24 +551,31 @@ _KEY:
         hlt                     ; halt for now
         push rsi                ; refill from keyboard
         mov rsi, buffer   ; since buffer is exhausted
-        mov [currkey], rsi           ; reset currkey to buff start
+        mov [buffpos], rsi           ; reset buffpos to buff start
         mov rdx, input_buffer_size ; max bytes we can get
         call refill_buffer
         pop rsi
 .eof:
         mov rsi, buffer         ; reset our pointers to
-        mov [currkey], rsi     ;  buffer start and currkey
+        mov [buffpos], rsi     ;  buffer start and buffpos
         ; set bufftop to buffer later?
         xor rax, rax            ; return 0
         call debug_s
         ret
 .err:
         hlt
-currkey:
+buffsize:
+        dq 0
+buffaddr:
         dq buffer
-bufftop:
+buffpos:
         dq buffer
-
+savcurrkey:
+        dq 0
+savbufftop:
+        dq 0
+savbuffaddr:
+        dq 0
 ; ---- Emit ----
         defcode "emit",4,EMIT
         pop rax                 ; byte to emit
@@ -585,11 +632,14 @@ _WORD:
         call _KEY
         cmp al, `\n`            ; new line?
         jne _WORD.skip
+
         jmp _WORD.start
 
 section .bss                   ; quick buffer
 word_buffer:
         resb 32
+word_lines:
+        resq 5
 
 ; ---- Number ----
         defcode "number",6,NUMBER
@@ -676,6 +726,14 @@ _FIND:
         pop rcx                 ; these
         jne _FIND.next
 
+        push rcx
+        push rdi
+        lea rsi, [rdx+9]
+        mov rdi, scratch
+        mov rcx, 32
+        rep movsb
+        pop rdi
+        pop rcx
         pop rsi                 ; they were the same
         mov rax, rdx            ; return header pointer
         ret
@@ -687,6 +745,14 @@ _FIND:
         xor rax, rax            ; return 0 / not found
         ret
 
+        defcode "source",6,SOURCE
+        push qword [buffaddr]
+        xor rax, rax
+        NEXT
+
+        defcode ">in",3,INPTR
+        push buffpos
+        NEXT
 
         defcode ">cfa",4,TCFA
         pop rdi
@@ -707,7 +773,7 @@ _TCFA:
         defword ">dfa",4,TDFA
         dq TCFA                 ;  >CFA (get code field)
         dq INCR4                ; skip 2 words
-        dq INCR4
+        dq INCR4                ; 8 bytes total = 1 qword
         dq EXIT
 
         defcode "create",6,CREATE
@@ -751,7 +817,7 @@ _COMMA:
 
 ; in compile mode
         defcode "]",1,RBRAC
-        mov rax, 1
+        mov rax, -1
         mov [var_STATE], rax
         NEXT
 
@@ -774,6 +840,22 @@ _COMMA:
         add rdi, 8              ; name / flags byte
         xor byte [rdi], F_IMMED
         NEXT
+
+        defcode "immediate?",10,IMMEDIATEQ
+        pop rbx
+        call _ISIMM
+        push rax
+        NEXT
+
+_ISIMM:
+        mov byte al,[rbx+8]
+        and al, F_IMMED
+        jnz _ISIMM.true
+        mov rax, 0
+        ret
+.true:
+        mov rax, -1
+        ret
 
         defcode "hidden",6,HIDDEN
         pop rdi
@@ -878,9 +960,6 @@ align 8
 interpret_is_lit:
         dq 0
 
-        defcode "dnoop",5,dnoop
-        nop
-        NEXT
 
         defcode "char",4,CHAR
         call _WORD              ; rcx len / rdi ptr
@@ -893,7 +972,56 @@ interpret_is_lit:
         pop rax                 ; get xt into rax
         jmp [rax]               ; jump there
 
+
+
+        defconst "dodoes",6,_dodoes,._dodo
+._dodo:
+        cmp qword [rax+8],0     ; has does been executed ?
+        jz .noDoes
+        lea rbp,[rbp-8]
+        mov [rbp], rsi
+        mov rsi, [rax+8]         ; ptr stored by does>
+.noDoes:
+        lea rax,[rax+16]
+        push rax                ; user data area address
+        NEXT
+
+; attempted dodoes from pijforth
+;         defword "$next",5,ASMNEXT
+;         NEXT_COMP
+;         dq EXIT
+
+; _DODOES:
+;         PUSHRSP rsi
+;         add rsi, 8
+;         add rax, 8
+;         push rax
+;         NEXT
+
+; %macro dodoes_body 0
+; .l1:
+;         dq LIT
+;         mov r9, $ + ((.l3-.l1)/((.l2-.l1)/(8)))
+;         dq COMMA
+; .l2:
+;         dq LIT
+;         call r9
+;         dq COMMA
+; .l3:
+;         dq LIT
+;         dq _DODOES
+;         dq COMMA
+; %endmacro
+
+;         defword "$dodoes",7,ASMDOES,F_IMMED
+;         dodoes_body
+;         dq EXIT
+
 %include "include/builtin-files.asm"
+
+        defcode "inoop",5,inoop,F_IMMED
+        nop
+        NEXT
 
         defcode "noop",4,NOOP
         nop
@@ -996,10 +1124,10 @@ section .data
 section .bss
 alignb 4096
 stack:
-        resw 1000
+        resq 1000
 stack_top:
 alignb 4096
-r_stack_bottom:
+r_stack:
          resw 1000
 r_stack_top:
 alignb 4096
@@ -1007,6 +1135,6 @@ buffer:
         resb input_buffer_size
 
 scratch:
-        resb 20
+        resb 64
 __DS:
         resq 262144

@@ -1,28 +1,20 @@
 ENTRY(start)
 SECTIONS {
-    . = 1M ;
-    .boot :
-    {
-        /* ensure multiboot header is at the beginning */
-        *(.multiboot_header)
-    }
+. = 1M ;
+.boot :
+{
+/* ensure multiboot header is at the beginning */
+*(.multiboot_header)
+}
 
-    .text :
-    {
-        *(.text .text.*)
-    }
+.text :
+{
+*(.text .text.*)
+}
 . = ALIGN(64 / 8);
-  _end = .; PROVIDE (end = .);
+_end = .; PROVIDE (end = .);
 
-  /* Stabs debugging sections.  */
-  .stab          0 : { *(.stab) }
-  .stabstr       0 : { *(.stabstr) }
-  .stab.excl     0 : { *(.stab.excl) }
-  .stab.exclstr  0 : { *(.stab.exclstr) }
-  .stab.index    0 : { *(.stab.index) }
-  .stab.indexstr 0 : { *(.stab.indexstr) }
-  .comment       0 : { *(.comment) }
-  /* DWARF debug sections.
+ /* DWARF debug sections.
      Symbols in the DWARF debugging sections are relative to the beginning
      of the section so we begin them at 0.  */
   /* DWARF 1 */
@@ -37,7 +29,7 @@ SECTIONS {
   /* DWARF 2 */
   .debug_info     0 : { *(.debug_info .gnu.linkonce.wi.*) }
   .debug_abbrev   0 : { *(.debug_abbrev) }
-  .debug_line     0 : { *(.debug_line .debug_line.* .debug_line_end ) }
+  .debug_line     0 : { *(.debug_line) }
   .debug_frame    0 : { *(.debug_frame) }
   .debug_str      0 : { *(.debug_str) }
   .debug_loc      0 : { *(.debug_loc) }
@@ -55,24 +47,24 @@ SECTIONS {
   .gnu.attributes 0 : { KEEP (*(.gnu.attributes)) }
   /DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) *(.gnu.lto_*) }
 
-    /* .rodata : */
-    /* { */
-    /*     *(.rodata .rodata.*) */
-    /* } */
+/* .rodata : */
+/* { */
+/* *(.rodata .rodata.*) */
+/* } */
 
-    /* .data.rel.ro : */
-    /* { */
-    /*     *(.data.rel.ro .data.rel.ro.*) */
-    /* } */
+/* .data.rel.ro : */
+/* { */
+/* *(.data.rel.ro .data.rel.ro.*) */
+/* } */
 
-    /* .data : */
-    /* { */
-    /*     *(.data .data.*) */
-    /* } */
+/* .data : */
+/* { */
+/* *(.data .data.*) */
+/* } */
 
-    /* kernel_stack_bottom = .; */
-    /* .    += kernel_stack_size; */
-    /* . = ALIGN(16); */
-    /* kernel_stack_top = .; */
+/* kernel_stack_bottom = .; */
+/* .    += kernel_stack_size; */
+/* . = ALIGN(16); */
+/* kernel_stack_top = .; */
 
 }
