@@ -248,7 +248,7 @@ cold_start:
         defcode "*",1,MUL
         pop rax
         pop rbx
-        imul rbx,rax
+        imul rax,rbx
         push rax
         NEXT
 
@@ -265,7 +265,7 @@ cold_start:
 %macro cmp2 0
         pop rax
         pop rbx
-        cmp rax, rbx
+        cmp rbx, rax
 %endmacro
 ; put result on stack
 %macro pushCmp 0
@@ -407,11 +407,11 @@ cold_start:
         add [rbx], rax
         NEXT
 
-        defcode "-1",2,SUBSTORE
-        pop rbx                 ; addr
-        pop rax                 ; operand 1
-        sub [rbx], rax
-        NEXT
+        ; defcode "-1",2,SUBSTORE
+        ; pop rbx                 ; addr
+        ; pop rax                 ; operand 1
+        ; sub [rbx], rax
+        ; NEXT
 
 ; byte level memory ops
 
@@ -474,6 +474,7 @@ var_%3:
         defvar "INPUT_BUFFER_SOURCE",19,IBS,0,-1
         defvar "INPUT_BUFFER",12,IB
         defvar "INPUT_BUFFER_LENGTH",19,IBL
+        defvar "$dodoes",7,DDADDR,0,code__dodoes._dodo
 
 %macro defconst 4-5 0
         defcode %1, %2, %3, %5
@@ -747,7 +748,7 @@ _FIND:
 
         defcode "source",6,SOURCE
         push qword [buffaddr]
-        xor rax, rax
+        push qword [buffsize]
         NEXT
 
         defcode ">in",3,INPTR

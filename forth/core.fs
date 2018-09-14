@@ -86,7 +86,7 @@ inoop
 \ begin condition while loop-stuff repeat
 : while immediate
     ' 0branch , \ compile 0branch
-    here !
+    here @
     0 ,
 ;
 
@@ -124,7 +124,6 @@ inoop
 : nip ( x y -- y ) swap drop ;
 : tuck ( x y -- y x y ) swap over ;
 : pick ( x_u ... x_1 x_0 u -- x_u ... x_1 x_0 x_u )
-    noop
     1+ ( +1 for the u on the stack )
     wordsize * ( offset is count * wordsize )
     dsp@ + ( stack ptr + offset )
@@ -356,7 +355,7 @@ inoop
 ;
 
 : catch ( xt -- exn? )
-    noop
+    32 noop drop
     dsp@ 8+ >r ( p-stack ptr save +8 for xt on rstack )
     ' exception-marker 8+ ( push rdrop address )
     >r ( onto return stack to fake return addr )
@@ -364,7 +363,7 @@ inoop
 ;
 
 : throw ( n -- )
-    noop
+    64 noop drop
     ?dup if ( only if exception code <> 0 )
         rsp@ ( return stack ptr )
         begin
@@ -507,7 +506,7 @@ hide while
 hide repeat
 hide word
 \ hide key
-hide ' ( lit is identical )
+hide ' \ ( lit is identical )
 
 \ replace non-standard forth words:
 
@@ -522,8 +521,10 @@ hide ' ( lit is identical )
 \ : key ( -- char ) get ;
 : ' ( "<spaces>name" -- xt ) (word) (find) >cfa ;
 
+
 : find ( c-addr -- c-addr 0 | xt 1 | xt -1 )
-  dup count (find) dup 0= if false exit then
+  \ dup count (find) dup 0= if noop false exit then
+  (find) dup 0= if noop false exit then
   nip dup 8+ @ F_IMMED and 0= if >cfa -1 exit then
   >cfa 1
 ;
@@ -543,20 +544,21 @@ hide ' ( lit is identical )
 	swap !		\ and back-fill it in the original location
 ; immediate
 
-: word ( char "<chars>ccc<char>" -- c-addr )
-  0 begin drop
-  source nip >in @ <= if drop 0 here c! here exit then \ nothing in buffer
-  (key) 2dup <> until \ skip leading delimiters
-  here -rot begin rot 1+ 2dup c! -rot drop \ store char
-  source nip >in @ <= if drop here - here c! here exit then \ exhausted
-  (key) 2dup = until 2drop here - here c! here
-;
+\ need to rewrite for newlines...
+\ : word ( char "<chars>ccc<char>" -- c-addr )
+\   0 begin drop
+\   source nip >in @ noop <= if drop 0 here c! here exit then \ nothing in buffer
+\   (key) 2dup <> until \ skip leading delimiters
+\   here -rot begin rot 1+ 2dup c! -rot drop \ store char
+\   source nip >in @ <= if drop here - here c! here exit then \ exhausted
+\   (key) 2dup = until 2drop here - here c! here
+\ ;
 
 : add5 5 5 + ;
 \ later nop
 
 : postpone ( "<spaces>name" -- )
-  bl word find [compile] dup 0= if abort then
+  bl (word) find [compile] dup 0= if abort then
   -1 = if
     ['] lit , , ['] , ,
   else
@@ -565,8 +567,34 @@ hide ' ( lit is identical )
 ; immediate
 
 : <builds (word) (create) dodoes , 0 , ;
-: does> r> latest @ >cfa ! ;
+: does> r> latest @ >dfa ! ;
 : >body ( xt -- a-addr ) 2 cells + ;
+
+
+: does1 does> @ 1 + ;
+: does2 does> @ 2 + ;
+
+create cr1
+
+cr1
+' cr1 >body
+1 ,
+cr1 @
+does1 noop
+cr1 noop
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 : defer create ['] abort , does> @ execute ;
 
@@ -574,6 +602,7 @@ hide ' ( lit is identical )
 \     >dfa @
 \ ;
 \ : defer!
+\     256 noop drop
 \     >dfa !
 \ ;
 
@@ -591,24 +620,42 @@ hide ' ( lit is identical )
     postpone ['] postpone defer! ; immediate
 
 : is
-  state @ if
-    postpone [is]
-  else
-    <is>
-  then ; immediate
+    state @ if
+      postpone [is]
+    else
+      <is>
+    then
+; immediate
 
 : action-of
  state @ if
-   POSTPONE ['] POSTPONE defer@
+     postpone ['] postpone defer@
  else
-   ' defer@
-then ; immediate
+     ' defer@
+ then
+; immediate
 
+128 noop drop
+defer num
+: ab num ;
 
-1 constant 8bits
-2 constant 16bits
-4 constant 32bits
-8 constant 64bits
+: n1 12 ;
+: n2 13 ;
+' n2 is num
+
+: bard num num + ;
+256 noop drop
+666
+num
+512 noop drop
+777
+bard
+888
+
+\ 1 constant 8bits
+\ 2 constant 16bits
+\ 4 constant 32bits
+\ 8 constant 64bits
 
 \ : struct 0 ;
 \ : field create swap dup , + does> @ + ;
@@ -648,17 +695,6 @@ char w display
 char o display
 char o display
 char t display
-
-defer num
-
- : ab num ;
-
- : n1 12 ;
- : n2 13 ;
-
- ' n2 is num
-
-num
 
 
 \ : nt' (word) (find) ;
