@@ -1,18 +1,267 @@
-inoop
+( )
+: char+ 1 + ;
+: cell 8 ;
+: cells  8 * ;
+: cell+ 1 cells + ;
+\ here in asm, moar ans
+: (here) here ;
+: here ( -- addr ) here @ ;
+\ old-here is addr that stores here
+: allot ( n -- ) here + (here) ! ;
+
+\ , asm
+: c, here 1 allot c! ;
+
+: false 0 ;
+: true  -1 ; \ traditionally jones has 1 as true
+: on true swap ! ;
+: off false swap ! ;
+
+\ 0<
+\ ... asm
+\ 2-
+: negate 0 swap - ; \ negative of n
+: not 0= ;
+: u>= u< not ;
+: u<= u> not ;
+: 0! 0 swap ! ;
+: 1-! -1 swap +! ;
+: and! dup @ rot and swap ! ;
+: or!  dup @ rot or swap ! ;
+
+\ a b c -- a<=b<=c
+: between over u>= >r u<= r> and ;
+
+\ x n -- flag
+: bit? 1 swap lshift and 0<> ;
+: CF? eflags 0 bit? ;
+: SF? eflags 7 bit? ;
+: OF? eflags 11 bit? ;
+
+\ -rot asm
+: tuck ( x y -- y x y ) swap over ;
+\ 2dup ... 2swap asm
+: nip ( x y -- y ) swap drop ;
+: 2nip ( w1 w2 w3 w4 -- w3 w4 ) 2swap 2drop ;
+\ /mod asm
 : / /mod swap drop ;
 : mod /mod drop ;
-: wordsize 8 ;
+
+\ ( addr+7 ) & ~7
+: aligned ( addr -- addr )
+    7 + 7 invert and ;
+: align here aligned (here) ! ;
+\ 2align is 8byte qword-which we are already using
+: clearstack sp-limit dsp! ;
+\ jones depth ( depth = stack depth ) no / 8
+: depth ( -- +n ) s0 @ 8- dsp@ - 8 / ;
+\ le dictionary link entry + 8 is len/flags + 1 = name
+: >name ( LE -- addr u )
+    8+ dup
+    c@ F_LENMASK and swap ( len nt -- )
+    1+ swap ;
+\ latest @ nt>name noop
+: previous-word ( LE -- LE2 )
+    @ ;
+: >xt
+    >cfa @ ;
+
+: parse-nt
+    word find ;
+
+: ['] immediate
+    ' lit , ;
+
+: literal immediate
+    ' lit , , ;
+
+\ force an otherwise immediate word to compile
+: [compile] immediate
+    word \ get/eat next word
+    find \ find it
+    >cfa \ get code word
+    , \ append that
+;
+
 : '\n' 10 ; \ newline
 : bl 32 ; \ blank / space
+
+
+: recurse immediate
+    latest @ \ get current word
+    >cfa \ get codeword from it
+    , \ append it in place
+;
+
+: if immediate
+    ' 0branch , \ apppend 0branch
+    here \ address of current offset on stack
+    0 , \ insert dummy offset
+;
+
+: then immediate
+    dup
+    here swap - \ get difference of old here and here
+    swap ! \ store offset in back-filled location
+;
+
+: else immediate
+    ' branch , \ unconditional branch over false-part
+    here \ our offfset
+    0 , \ store dummy offset
+    swap \ backfill the 'if' offset
+    dup \ and so on for then
+    here swap -
+    swap !
+;
+
+\ begin loop-stuff condition until
+: begin immediate
+    here \ location to stack
+;
+
+: until immediate
+    ' 0branch ,
+    here - \ calculate offset from start of loop
+    , \ store that
+;
+
+\ begin loop-stuff again
+\ infinite loop, must call exit
+: again immediate
+    ' branch ,
+    here -
+    , ;
+
+\ begin condition while loop-stuff repeat
+: while immediate
+    ' 0branch , \ compile 0branch
+    here
+    0 , ;
+
+: repeat immediate
+    ' branch ,
+    swap \ begin's offset
+    here - , \ append calculation
+    dup
+    here swap - \ second offset
+    swap ! \ backfill
+;
+
+\ if but reversed test
+: unless immediate
+    ' not , \ reverse test
+    [compile] if \ literal immediate 'if'
+;
+
+: noname
+    0 0 create ( word with no name )
+    here ( here is xt addr )
+    docol , ( the xt )
+    ] ( enter compile mode )
+;
+
+
+: exception-marker
+    rdrop ( drop param stack ptr  )
+    0 ( no exception, normal return path )
+;
+
+: catch ( xt -- exn? )
+    dsp@ 8+ >r ( p-stack ptr save +8 for xt on rstack )
+    ' exception-marker 8+ ( push rdrop address )
+    >r ( onto return stack to fake return addr )
+    execute ( execute nested fn )
+;
+
+: throw ( n -- )
+    ?dup if ( only if exception code <> 0 )
+        rsp@ ( return stack ptr )
+        begin
+            dup r0 8- < ( rsp < r0 )
+        while
+                dup @ ( get return stack entry )
+                ' exception-marker 8+ = if ( found the marker )
+                    8+ ( skip marker )
+                    rsp! ( restore return stack ptr )
+                    ( restore param stack )
+                    dup dup dup ( working space / prevent overlap )
+                    r> ( saved pstack ptr | n dsp )
+                    8- ( reserve space to store n )
+                    swap over ( dsp n dsp )
+                    ! ( write n to the stack )
+                    dsp! exit ( restore p stack ptr then bail )
+                then
+                8+
+        repeat
+        ( no frame found restart interpreter )
+        drop
+        ( case print later )
+        quit
+    then
+;
+
+: abort ( -- )
+   0 1- throw
+;
+
+: find ( c-addr -- c-addr 0 | xt 1 | xt -1 )
+  \ dup count (find) dup 0= if noop false exit then
+  find dup 0= if noop false exit then
+  nip dup 8+ @ F_IMMED and 0= if >cfa -1 exit then
+  >cfa 1
+;
+
+: postpone ( "<spaces>name" -- )
+  bl word find [compile] dup 0= if abort then
+  -1 = if
+    ['] lit , , ['] , ,
+  else
+    ,
+  then
+; immediate
+
+: alias
+    word create word find >cfa @
+    \ skip check for now dup docol = if abort then
+    ,
+; immediate
+
+: create ( "<spaces>name" -- ) word create dodoes , 0 , ;
+: <builds word create dodoes , 0 , ;
+: does> r> latest @ >dfa ! ;
+: >body ( xt -- a-addr ) 2 cells + ;
+
+\ : variable
+\   here @ \ get current here
+\   1 cells allot \ allot memory
+\   word create \ makeheader
+\   docol ,
+\   ' lit ,
+\   , \
+\   ' exit , ;
+
+: variable create 1 cells allot ;
+
+: constant
+  word create
+  docol ,
+  ' lit ,
+  ,
+  ' exit , ;
+
+: ]l ] postpone literal ;
+
+
+
+: wordsize 8 ;
+
 \ defer emitting words until proper kernel\emit support
 \ : cr '\n\' emit ;
 \ : space bl emit ;
-: negate 0 swap - ; \ negative of n
-: true 1 ;
-: false 0 ;
-: not 0= ;
 
-: literal immediate ' lit , , ;
+
+
 \ [ ... ] literal is compile time 'macro'
 \ where char x become the int for x
 \ at compile time and thus
@@ -29,81 +278,8 @@ inoop
 : '-' [ char - ] literal ;
 : '.' [ char . ] literal ;
 
-\ force an otherwise immediate word to compile
-: [compile] immediate
-    word \ get/eat next word
-    find \ find it
-    >cfa \ get code word
-    , \ append that
-;
 
-: recurse immediate
-    latest @ \ get current word
-    >cfa \ get codeword from it
-    , \ append it in place
-;
 
-: if immediate
-    ' 0branch , \ apppend 0branch
-    here @ \ address of current offset on stack
-    0 , \ insert dummy offset
-;
-
-: then immediate
-    dup
-    here @ swap - \ get difference of old here and here
-    swap ! \ store offset in back-filled location
-;
-
-: else immediate
-    ' branch , \ unconditional branch over false-part
-    here @ \ our offfset
-    0 , \ store dummy offset
-    swap \ backfill the 'if' offset
-    dup \ and so on for then
-    here @ swap -
-    swap !
-;
-\ begin loop-stuff condition until
-: begin immediate
-    here @ \ location to stack
-;
-
-: until immediate
-    ' 0branch ,
-    here @ - \ calculate offset from start of loop
-    , \ store that
-;
-
-\ begin loop-stuff again
-\ infinite loop, must call exit
-: again immediate
-    ' branch ,
-    here @ -
-    ,
-;
-
-\ begin condition while loop-stuff repeat
-: while immediate
-    ' 0branch , \ compile 0branch
-    here @
-    0 ,
-;
-
-: repeat immediate
-    ' branch ,
-    swap \ begin's offset
-    here @ - , \ append calculation
-    dup
-    here @ swap - \ second offset
-    swap ! \ backfill
-;
-
-\ if but reversed test
-: unless immediate
-    ' not , \ reverse test
-    [compile] if \ literal immediate 'if'
-;
 
 : ( immediate
     1 \ keep track of nested paren depths
@@ -121,8 +297,8 @@ inoop
     drop \ drop counter
 ;
 
-: nip ( x y -- y ) swap drop ;
-: tuck ( x y -- y x y ) swap over ;
+
+
 : pick ( x_u ... x_1 x_0 u -- x_u ... x_1 x_0 x_u )
     1+ ( +1 for the u on the stack )
     wordsize * ( offset is count * wordsize )
@@ -153,84 +329,53 @@ inoop
     then
 ;
 
-( depth = stack depth )
-: depth ( -- n )
-    s0 @ dsp@ -
-    8- ( adjust for s0 on stack )
-;
 
-: aligned ( addr -- addr )
-    7 + 7 invert and ( (addr+7) & ~7 )
-;
 
-: align here @ aligned here ! ;
 
-: c,
-    here @ c! ( store char in compiled image )
-    1 here +! ( inc here by 1 byte )
-;
+\ : c,
+\     here @ c! ( store char in compiled image )
+\     1 here +! ( inc here by 1 byte )
+\ ;
 
-: s" immediate ( -- addr len )
-    state @ if ( are we compiling )
-        ' litstring ,
-        here @ ( save address for length on stack )
-        0 , ( dummy length )
-        begin
-            key ( get char of string )
-            dup '"' <>
-        while
-                c, ( copy it )
-        repeat
-        drop ( drop the " char at end )
-        dup ( saved addr for length )
-        here @ swap - ( calc length )
-        8- ( remove length word )
-        swap ! ( backfill length )
-        align ( get us to multiple of 8 bytes )
-    else ( immediate not copmiling )
-        here @ ( start of temp space )
-        begin
-            key
-            dup '"' <>
-        while
-                over c! ( save )
-                1+ ( increment addr )
-        repeat
-        drop
-        here @ - ( length )
-        here @ ( push start addr )
-        swap ( addr len )
-    then
-;
+\ : s" immediate ( -- addr len )
+\     state @ if ( are we compiling )
+\         ' litstring ,
+\         here @ ( save address for length on stack )
+\         0 , ( dummy length )
+\         begin
+\             key ( get char of string )
+\             dup '"' <>
+\         while
+\                 c, ( copy it )
+\         repeat
+\         drop ( drop the " char at end )
+\         dup ( saved addr for length )
+\         here @ swap - ( calc length )
+\         8- ( remove length word )
+\         swap ! ( backfill length )
+\         align ( get us to multiple of 8 bytes )
+\     else ( immediate not copmiling )
+\         here @ ( start of temp space )
+\         begin
+\             key
+\             dup '"' <>
+\         while
+\                 over c! ( save )
+\                 1+ ( increment addr )
+\         repeat
+\         drop
+\         here @ - ( length )
+\         here @ ( push start addr )
+\         swap ( addr len )
+\     then
+\ ;
 
 \ no ." for now
 
-: chars ;
-: char+ 1 chars + ;
-: cell 8 ;
-: cells ( n -- n ) 8 * ;
 
-: allot ( n -- addr )
-  here @ swap
-  here +!
-;
 
-: variable
-  1 cells allot
-  word create
-  docol ,
-  ' lit ,
-  ,
-  ' exit ,
-;
 
-: constant
-  word create
-  docol ,
-  ' lit ,
-  ,
-  ' exit ,
-;
+
 
 : value ( n -- )
     word create
@@ -338,61 +483,7 @@ inoop
 
 \ see missing
 
-: noname
-    0 0 create ( word with no name )
-    here @ ( here is xt addr )
-    docol , ( the xt )
-    ] ( enter compile mode )
-;
 
-: ['] immediate
-    ' lit ,
-;
-
-: exception-marker
-    rdrop ( drop param stack ptr  )
-    0 ( no exception, normal return path )
-;
-
-: catch ( xt -- exn? )
-    32 noop drop
-    dsp@ 8+ >r ( p-stack ptr save +8 for xt on rstack )
-    ' exception-marker 8+ ( push rdrop address )
-    >r ( onto return stack to fake return addr )
-    execute ( execute nested fn )
-;
-
-: throw ( n -- )
-    64 noop drop
-    ?dup if ( only if exception code <> 0 )
-        rsp@ ( return stack ptr )
-        begin
-            dup r0 8- < ( rsp < r0 )
-        while
-                dup @ ( get return stack entry )
-                ' exception-marker 8+ = if ( found the marker )
-                    8+ ( skip marker )
-                    rsp! ( restore return stack ptr )
-                    ( restore param stack )
-                    dup dup dup ( working space / prevent overlap )
-                    r> ( saved pstack ptr | n dsp )
-                    8- ( reserve space to store n )
-                    swap over ( dsp n dsp )
-                    ! ( write n to the stack )
-                    dsp! exit ( restore p stack ptr then bail )
-                then
-                8+
-        repeat
-        ( no frame found restart interpreter )
-        drop
-        ( case print later )
-        quit
-    then
-;
-
-: abort ( -- )
-   0 1- throw
-;
 
 \ c strings missing
 \ env missing
@@ -479,70 +570,57 @@ hide =next
 \ end regular jonesforth phew.....
 
 
-: alias
-    word create word find >cfa @
-    \ skip check for now dup docol = if abort then
-    ,
-; immediate
 
 
-alias (here) here
-alias (create) create
-alias (find) find
-alias (word) word
-alias (key) key
+
+\ alias (here) here
+\ alias (create) create
+\ alias (find) find
+\ alias (word) word
+\ alias (key) key
 
 \ hide non-standard jonesforth words:
 
-hide depth
-\ hide .s
-hide here
-hide allot
-hide create
-hide variable
-hide true
-hide find
-hide while
-hide repeat
-hide word
-\ hide key
-hide ' \ ( lit is identical )
+\ hide depth
+\ \ hide .s
+\ hide here
+\ hide allot
+\ hide create
+\ \ hide variable
+\ hide find
+\ hide while
+\ hide repeat
+\ hide word
+\ \ hide key
+\ hide ' \ ( lit is identical )
 
 \ replace non-standard forth words:
 
-: depth ( -- +n ) s0 @ 8- dsp@ - 8 / ;
-
-: here ( -- addr ) (here) @ ;
-: allot ( n -- ) here + (here) ! ;
-: create ( "<spaces>name" -- ) (word) (create) dodoes , 0 , ;
-: variable ( "<spaces>name" -- ) create 1 cells allot ;
-: true ( -- true ) -1 ;
-: count ( caddr1 -- caddr2 u ) dup c@ swap 1+ swap ;
-\ : key ( -- char ) get ;
-: ' ( "<spaces>name" -- xt ) (word) (find) >cfa ;
 
 
-: find ( c-addr -- c-addr 0 | xt 1 | xt -1 )
-  \ dup count (find) dup 0= if noop false exit then
-  (find) dup 0= if noop false exit then
-  nip dup 8+ @ F_IMMED and 0= if >cfa -1 exit then
-  >cfa 1
-;
 
-: while ( c: dest -- orig dest )
-	['] 0branch ,	\ compile 0branch
-	here 		\ save location of the offset2 on the stack
-	swap		\ get the original offset (from begin)
-	0 ,		\ compile a dummy offset2
-; immediate
+\ \ : variable ( "<spaces>name" -- ) create 1 cells allot ;
+\ : count ( caddr1 -- caddr2 u ) dup c@ swap 1+ swap ;
+\ \ : key ( -- char ) get ;
+: ' ( "<spaces>name" -- xt ) word find >cfa ;
 
-: repeat ( c: orig dest -- )
-	['] branch ,	\ compile branch
-	here - ,	\ and compile it after branch
-	dup
-	here swap -	\ calculate the offset2
-	swap !		\ and back-fill it in the original location
-; immediate
+
+
+
+\ : while ( c: dest -- orig dest )
+\ 	['] 0branch ,	\ compile 0branch
+\ 	here 		\ save location of the offset2 on the stack
+\ 	swap		\ get the original offset (from begin)
+\ 	0 ,		\ compile a dummy offset2
+\ ; immediate
+
+\ : repeat ( c: orig dest -- )
+\ 	['] branch ,	\ compile branch
+\ 	here - ,	\ and compile it after branch
+\ 	dup
+\ 	here swap -	\ calculate the offset2
+\ 	swap !		\ and back-fill it in the original location
+\ ; immediate
 
 \ need to rewrite for newlines...
 \ : word ( char "<chars>ccc<char>" -- c-addr )
@@ -557,31 +635,24 @@ hide ' \ ( lit is identical )
 : add5 5 5 + ;
 \ later nop
 
-: postpone ( "<spaces>name" -- )
-  bl (word) find [compile] dup 0= if abort then
-  -1 = if
-    ['] lit , , ['] , ,
-  else
-    ,
-  then
-; immediate
 
-: <builds (word) (create) dodoes , 0 , ;
-: does> r> latest @ >dfa ! ;
-: >body ( xt -- a-addr ) 2 cells + ;
+
+
+\ : does> r> latest @ >dfa ! ;
+\ : >body ( xt -- a-addr ) 2 cells + ;
 
 
 : does1 does> @ 1 + ;
 : does2 does> @ 2 + ;
 
-create cr1
+\ create cr1
 
-cr1
-' cr1 >body
-1 ,
-cr1 @
-does1 noop
-cr1 noop
+\ cr1
+\ ' cr1 >body
+\ 1 ,
+\ cr1 @
+\ does1 noop
+\ cr1 noop
 
 
 
@@ -635,22 +706,17 @@ cr1 noop
  then
 ; immediate
 
-128 noop drop
+noop
 defer num
+noop
 : ab num ;
 
 : n1 12 ;
 : n2 13 ;
+noop
 ' n2 is num
-
+noop
 : bard num num + ;
-256 noop drop
-666
-num
-512 noop drop
-777
-bard
-888
 
 \ 1 constant 8bits
 \ 2 constant 16bits
@@ -663,8 +729,7 @@ bard
 
 
 \ : true 1 ;
-\ : on true swap ! ;
-\ : off false swap ! ;
+
 
 \ : 2+ 2 + ;
 \ : 2- 2 - ;
@@ -699,3 +764,4 @@ char t display
 
 \ : nt' (word) (find) ;
 \ : comp' nt' >cfa
+noop

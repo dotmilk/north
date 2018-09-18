@@ -5,7 +5,7 @@ extern idt
 bits 64
 %define gdtCsSelector 0x08
 %define r_stack_size 4096
-%define stack_size 4096
+%define stack_size 1000
 %define input_buffer_size 4096
 
 %define F_IMMED 0x80         ; Immediate flag
@@ -131,6 +131,14 @@ section .rodata
 cold_start:
         dq QUIT
 
+        defcode "eflags",6,EFLAGS
+        pushf
+        NEXT
+
+        defcode "eflags!",7,EFLAGS_STORE
+        popf
+        NEXT
+
         defcode "drop",4,DROP
         pop rax
         NEXT
@@ -209,31 +217,39 @@ cold_start:
         dec qword [rsp]
         NEXT
 
-        defcode "4+",2,INCR4
-        add qword [rsp], 4
+        defcode "2+",2,INC2
+        add qword [rsp], 2
         NEXT
 
-        defcode "8+",2,INCR8
-        add qword [rsp], 8
+        defcode "2-",2,DEC2
+        sub qword [rsp], 2
+        NEXT
+
+        defcode "4+",2,INCR4
+        add qword [rsp], 4
         NEXT
 
         defcode "4-",2,DECR4
         sub qword [rsp], 4
         NEXT
 
+        defcode "8+",2,INCR8
+        add qword [rsp], 8
+        NEXT
+
         defcode "8-",2,DECR8
         sub qword [rsp], 8
         NEXT
 
-        ; defcode "<<",2,LSHIFT
-        ; pop rax
-        ; shl [rsp], rax
-        ; NEXT
+        defcode "lshift",6,LSHIFT
+        pop rcx
+        shl qword [rsp], cl
+        NEXT
 
-        ; defcode ">>",2,RSHIFT
-        ; pop rax
-        ; shl [rsp], rax
-        ; NEXT
+        defcode "rshift",6,RSHIFT
+        pop rcx
+        shr qword [rsp], cl
+        NEXT
 
         defcode "+",1,ADD
         pop rax
@@ -295,6 +311,18 @@ cold_start:
         defcode ">",1,GT
         cmp2
         setg al
+        pushCmp
+        NEXT
+
+        defcode "u<",2,ULT
+        cmp2
+        setb al
+        pushCmp
+        NEXT
+
+        defcode "u>",2,UGT
+        cmp2
+        seta al
         pushCmp
         NEXT
 
@@ -407,12 +435,6 @@ cold_start:
         add [rbx], rax
         NEXT
 
-        ; defcode "-1",2,SUBSTORE
-        ; pop rbx                 ; addr
-        ; pop rax                 ; operand 1
-        ; sub [rbx], rax
-        ; NEXT
-
 ; byte level memory ops
 
         defcode "c!",2,STOREBYTE
@@ -465,8 +487,10 @@ align 8
 var_%3:
         dq %5
 %endmacro
+        defvar "sp-limit",8,sp_limit,0,stack+(stack_size*8)
         defvar "word_count",10,WC,0,word_lines
         defvar "state",5,STATE
+        defvar "tmpbase",7,TMPBASE
         defvar "here",4,HERE
         defvar "latest",6,LATEST,0,name_NOOP ; initial should be last builtin name_SYSCALL0
         defvar "s0",2,SZ
@@ -527,10 +551,30 @@ var_%3:
         pop rsp
         NEXT
 
-; ---- Input ----
+        ; ---- Input ----
+
+        defcode "h#",2,TMPHEX
+        mov qword [var_TMPBASE], 0x10
+        NEXT
+
+        defcode "d#",2,TMPDEC
+        mov qword [var_TMPBASE], 0xA
+        NEXT
+
+        defcode "o#",2,TMPOCT
+        mov qword [var_TMPBASE], 0x8
+        NEXT
+
+        defcode "b#",2,TMPBIN
+        mov qword [var_TMPBASE], 0x2
+        NEXT
+
+        defcode "ctb",3,CTB
+        mov qword [var_TMPBASE], 0
+        NEXT
+
         defcode "key",3,KEY
         call _KEY
-
         push rax
         NEXT
 _KEY:
@@ -659,6 +703,11 @@ _NUMBER:
         ret                     ; nope? bail
 .continue:
         mov rdx, [var_BASE]       ; dl holds base
+        mov r8, [var_TMPBASE]     ; r8 tmp base?
+        test r8,r8
+        jz _NUMBER.noTmpBase
+        mov rdx, r8
+.noTmpBase:
         mov bl, [rdi]           ; bl is fst char
         inc rdi                 ; point to next char
         push rax                ; 0 onto stack
@@ -696,6 +745,7 @@ _NUMBER:
         jz _NUMBER.done
         neg rax
 .done:
+        mov qword [var_TMPBASE], 0
         ret
 
         defcode "find",4,FIND
@@ -954,7 +1004,6 @@ _ISIMM:
         push rbx
         NEXT
 .err:
-
         hlt
 section .data
 align 8
@@ -1019,6 +1068,23 @@ interpret_is_lit:
 ;         dq EXIT
 
 %include "include/builtin-files.asm"
+
+        defcode "(",1,OPEN_COMMENT,F_IMMED
+        mov rcx, 1              ; nested parent count
+.start:
+        call _KEY               ; byte in al
+        cmp rax, '('            ; another open paren?
+        jne code_OPEN_COMMENT.closeParen
+        inc rcx                 ; it was, inc counter
+        jmp code_OPEN_COMMENT.start  ; go again
+.closeParen:
+        cmp rax, ')'            ; closing parens?
+        jne code_OPEN_COMMENT.start
+        dec rcx                 ; it was, dec counter
+        cmp rcx, 0              ; are we done?
+        jne code_OPEN_COMMENT.start
+        NEXT
+
 
         defcode "inoop",5,inoop,F_IMMED
         nop
@@ -1125,7 +1191,7 @@ section .data
 section .bss
 alignb 4096
 stack:
-        resq 1000
+        resq stack_size
 stack_top:
 alignb 4096
 r_stack:
