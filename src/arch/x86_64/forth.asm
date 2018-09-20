@@ -94,8 +94,9 @@ _NEXT:
 
 DOCOL:
         PUSHRSP rsi          ; return ptr on r_stack
-        add rax, 8           ; inc codeword ptr
-        mov rsi, rax         ; to first instruction
+        lea rsi, [rax + 8]   ; inc codeword to first instruction
+        ; add rax, 8           ; inc codeword ptr
+        ; mov rsi, rax         ; to first instruction
         NEXT
 
 section .text
@@ -164,18 +165,18 @@ cold_start:
         pop rax
         pop rbx
         pop rcx
+        push rbx
         push rax
         push rcx
-        push rbx
         NEXT
 
         defcode "-rot",4,NROT
         pop rax
         pop rbx
         pop rcx
-        push rbx
         push rax
         push rcx
+        push rbx
         NEXT
 
         defcode "2drop",5,TWODROP
@@ -408,7 +409,23 @@ cold_start:
         defcode "lit",3,LIT
         lodsq
         push rax
-       NEXT
+        NEXT
+
+        defcode "roll",4,ROLL
+        pop rcx                 ; n items
+        jecxz code_ROLL.roll_next
+        lea rdi,[rsp + rcx * 8]
+        lea rbx,[rdi - 8]
+        mov rax,[rdi]
+        std
+        xchg rsi, rbx
+        rep movsq
+        xchg rsi, rbx
+        cld
+        mov [rsp],rax
+.roll_next:
+        NEXT
+
 
 ; Direct Memory operations
         defcode "!",1,STORE
@@ -518,10 +535,20 @@ var_%3:
         PUSHRSP rax             ; to return stack
         NEXT
 
+        defword "2>r",3,TTOR
+        dq TOR
+        dq TOR
+        dq EXIT
+
         defcode "r>",2,FROMR
         POPRSP rax              ; from return stack
         push rax                ; to parameter stack
         NEXT
+
+        defword "2r>",3,TFROMR
+        dq FROMR
+        dq FROMR
+        dq EXIT
 
         defcode "r@",2,RFETCH   ; bb4w...why not alias rsp@?
         mov rax, [rbp]
@@ -936,6 +963,13 @@ _ISIMM:
         lodsq                   ; otherwise skip
         NEXT
 
+        defcode "?branch",7,NZBRANCH
+        pop rax
+        test rax, rax           ; is top of stack not 0
+        jnz code_BRANCH         ; jump to branch
+        lodsq                   ; otherwise skip
+        NEXT
+
         defcode "litstring",9,LITSTRING
         lodsq                   ; length of string
         push rsi                ; push address of string
@@ -1036,36 +1070,80 @@ interpret_is_lit:
         push rax                ; user data area address
         NEXT
 
-; attempted dodoes from pijforth
-;         defword "$next",5,ASMNEXT
-;         NEXT_COMP
-;         dq EXIT
+        defcode "leave",5,LVE
+        lea rbp,[rbp + 24]      ; pop return stack
+        jmp code_QDO.leave
 
-; _DODOES:
-;         PUSHRSP rsi
-;         add rsi, 8
-;         add rax, 8
-;         push rax
-;         NEXT
+        defcode "?do",3,QDO
+        pop rcx                 ; initial index
+        pop rdx                 ; limit
+        cmp rcx,rdx
+        jne code_DO.dogo
+.leave:
+        mov rcx, 1
+        xor rbx, rbx
+.qdoloop:
+        lodsq
+        cmp rax, code_DO            ; nested loop?
+        setz bl
+        add rcx, rbx
+        cmp rax, code_QDO
+        setz bl
+        add rcx, rbx
+        cmp rax, code_Lloop
+        setz bl
+        sub rcx, rbx
+        cmp eax, code_Ploop
+        setz bl
+        sub rcx, rbx
+        or rcx, rcx
+        jnz code_QDO.qdoloop
+        NEXT
 
-; %macro dodoes_body 0
-; .l1:
-;         dq LIT
-;         mov r9, $ + ((.l3-.l1)/((.l2-.l1)/(8)))
-;         dq COMMA
-; .l2:
-;         dq LIT
-;         call r9
-;         dq COMMA
-; .l3:
-;         dq LIT
-;         dq _DODOES
-;         dq COMMA
-; %endmacro
+        defcode "do",2,DO
+        pop rcx                 ; initial index
+        pop rdx                 ; limit
+.dogo:
+        lea rbp,[rbp - 24]      ; return stack room
+        mov [rbp + 16], rsi
+        mov [rbp + 8], rdx
+        mov [rbp], rcx
+        NEXT
 
-;         defword "$dodoes",7,ASMDOES,F_IMMED
-;         dodoes_body
-;         dq EXIT
+        defcode "+loop",5,Ploop
+        pop rax
+        jmp code_Lloop.loop_step
+
+        defcode "loop",4,Lloop
+        mov rax, 1              ; default step
+.loop_step:
+        mov rbx, [rbp]          ; index
+        sub rbx, [rbp + 8]      ; limit
+        btc rbx, 63             ; invert MSB
+        add rbx, rax            ; step
+        jo code_Unloop          ; loop end on overflow
+        btc rbx, 63             ; revert MSB
+        add rbx, [rbp + 8]      ; add limit back
+        mov [rbp], rbx          ; updated index
+        mov rsi, [rbp + 16]
+        NEXT
+
+        defcode "unloop",6,Unloop
+        lea rbp,[rbp + 24]      ; pop return stack
+        NEXT
+
+        defcode "i",1,i
+        push qword [rbp]
+        NEXT
+
+        defcode "j",1,j
+        push qword [rbp + 24]
+        NEXT
+
+        defcode "k",1,k
+        push qword [ rbp + 40]  ; untested
+        NEXT
+
 
 %include "include/builtin-files.asm"
 

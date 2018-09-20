@@ -1,10 +1,17 @@
 ( )
+: alias
+    word create word find >cfa @
+    \ skip check for now dup docol = if abort then
+    ,
+; immediate
+
+: wordsize 8 ;
 : char+ 1 + ;
 : cell 8 ;
 : cells  8 * ;
 : cell+ 1 cells + ;
 \ here in asm, moar ans
-: (here) here ;
+alias (here) here
 : here ( -- addr ) here @ ;
 \ old-here is addr that stores here
 : allot ( n -- ) here + (here) ! ;
@@ -65,6 +72,7 @@
     @ ;
 : >xt
     >cfa @ ;
+
 
 : parse-nt
     word find ;
@@ -154,13 +162,23 @@
     [compile] if \ literal immediate 'if'
 ;
 
+alias (word) word
+hide word
+: word ( char "<chars>ccc<char>" -- c-addr )
+  0 begin drop
+  source nip >in @ <= if drop 0 here c! here exit then \ nothing in buffer
+  key 2dup <> until \ skip leading delimiters
+  here -rot begin rot 1+ 2dup c! -rot drop \ store char
+  source nip >in @ <= if drop here - here c! here exit then \ exhausted
+  key 2dup = until 2drop here - here c! here
+;
+
 : noname
     0 0 create ( word with no name )
     here ( here is xt addr )
     docol , ( the xt )
     ] ( enter compile mode )
 ;
-
 
 : exception-marker
     rdrop ( drop param stack ptr  )
@@ -221,11 +239,6 @@
   then
 ; immediate
 
-: alias
-    word create word find >cfa @
-    \ skip check for now dup docol = if abort then
-    ,
-; immediate
 
 : create ( "<spaces>name" -- ) word create dodoes , 0 , ;
 : <builds word create dodoes , 0 , ;
@@ -252,9 +265,46 @@
 
 : ]l ] postpone literal ;
 
+: abs dup 0< if negate then ;
+
+: max 2dup < if nip else drop then ;
+
+: min 2dup > if nip else drop then ;
+
+: pick ( x_u ... x_1 x_0 u -- x_u ... x_1 x_0 x_u )
+    1+ ( +1 for the u on the stack )
+    wordsize * ( offset is count * wordsize )
+    dsp@ + ( stack ptr + offset )
+    @ ( fetch )
+;
+
+\ roll asm
+
+: ndrop ( xn .. x1 x0 n --- )
+    1+
+    wordsize *
+    dsp@ +
+    dsp!
+;
+
+: 2over 3 pick 3 pick ;
+: 2tuck 2swap 2over ;
+: 2rot 5 roll 5 roll ;
+
+\ Like ALLOT but initialize memory to 0.
+: zallot ( n -- )
+    dup 0 < if
+        allot
+    else
+        here swap
+        dup allot
+        0 fill
+    endif ;
+
+: move ( c-from c-to u )
+    >r 2dup < if r> cmove> else r> cmove then ;
 
 
-: wordsize 8 ;
 
 \ defer emitting words until proper kernel\emit support
 \ : cr '\n\' emit ;
@@ -299,12 +349,7 @@
 
 
 
-: pick ( x_u ... x_1 x_0 u -- x_u ... x_1 x_0 x_u )
-    1+ ( +1 for the u on the stack )
-    wordsize * ( offset is count * wordsize )
-    dsp@ + ( stack ptr + offset )
-    @ ( fetch )
-;
+
 
 : decimal ( -- ) 10 base ! ;
 : hex ( -- ) 16 base ! ;
@@ -761,7 +806,14 @@ char o display
 char o display
 char t display
 
+: test-do
+    4 0 do
+        i
+        65 i + display
+    loop
+;
 
+test-do
 \ : nt' (word) (find) ;
 \ : comp' nt' >cfa
 noop
