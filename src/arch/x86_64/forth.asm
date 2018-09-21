@@ -478,11 +478,26 @@ cold_start:
 
         defcode "cmove",5,CMOVE
         mov rdx, rsi            ; keep rsi
-        pop rcx                 ; length
-        pop rdi                 ; destination
-        pop rsi                 ; source
-        rep movsb               ; sourc -> destination
+        pop rcx                 ; length \ u
+        pop rdi                 ; destination \ to
+        pop rsi                 ; source \ from
+        rep movsb               ; source -> destination
         mov rsi, rdx            ; restore rsi
+        NEXT
+
+        defcode "cmove>",6,CMOVETO
+        mov rdx, rsi            ; keep rsi
+        pop rcx                 ; length \ u
+        pop rdi                 ; destination \ to
+        pop rsi                 ; source \ from
+        add rsi,rcx
+        add rdi,rcx
+        add rcx,1
+        std
+        rep movsb               ; sourc -> destination
+        cld
+        mov rsi, rdx            ; restore rsi
+        NEXT
 
         defcode "fill",4,fill
         pop rax                 ; char

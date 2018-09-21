@@ -46,7 +46,10 @@ build/arch/$(arch)/%.o: src/arch/$(arch)/%.asm
 build/arch/$(arch)/%.o: forth/%.fs
 	@echo "called still"
 	@mkdir -p $(shell dirname $@)
+	# @cp $< $<.bak
+	# @tr '\n' ' ' < $<.bak > $<
 	@x86_64-elf-objcopy -I binary -O elf64-x86-64 -Bi386 $< $@;
+	# @mv $<.bak $<
 
 builtin-files.asm: $(forth_source_files)
 	sh generate-builtins.sh forth/$(shell basename $<)

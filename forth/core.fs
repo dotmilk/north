@@ -5,6 +5,9 @@
     ,
 ; immediate
 
+hide '
+: ' ( "<spaces>name" -- xt ) word find >cfa ;
+
 : wordsize 8 ;
 : char+ 1 + ;
 : cell 8 ;
@@ -78,10 +81,10 @@ alias (here) here
     word find ;
 
 : ['] immediate
-    ' lit , ;
+    lit lit , ;
 
 : literal immediate
-    ' lit , , ;
+    lit lit , , ;
 
 \ force an otherwise immediate word to compile
 : [compile] immediate
@@ -93,6 +96,15 @@ alias (here) here
 
 : '\n' 10 ; \ newline
 : bl 32 ; \ blank / space
+: ':' [ char : ] literal ;
+: ';' [ char ; ] literal ;
+: '(' [ char ( ] literal ;
+: ')' [ char ) ] literal ;
+: '"' [ char " ] literal ;
+: 'A' [ char A ] literal ;
+: '0' [ char 0 ] literal ;
+: '-' [ char - ] literal ;
+: '.' [ char . ] literal ;
 
 
 : recurse immediate
@@ -102,7 +114,7 @@ alias (here) here
 ;
 
 : if immediate
-    ' 0branch , \ apppend 0branch
+    lit 0branch , \ apppend 0branch
     here \ address of current offset on stack
     0 , \ insert dummy offset
 ;
@@ -114,7 +126,7 @@ alias (here) here
 ;
 
 : else immediate
-    ' branch , \ unconditional branch over false-part
+    lit branch , \ unconditional branch over false-part
     here \ our offfset
     0 , \ store dummy offset
     swap \ backfill the 'if' offset
@@ -129,7 +141,7 @@ alias (here) here
 ;
 
 : until immediate
-    ' 0branch ,
+    lit 0branch ,
     here - \ calculate offset from start of loop
     , \ store that
 ;
@@ -137,18 +149,18 @@ alias (here) here
 \ begin loop-stuff again
 \ infinite loop, must call exit
 : again immediate
-    ' branch ,
+    lit branch ,
     here -
     , ;
 
 \ begin condition while loop-stuff repeat
 : while immediate
-    ' 0branch , \ compile 0branch
+    lit 0branch , \ compile 0branch
     here
     0 , ;
 
 : repeat immediate
-    ' branch ,
+    lit branch ,
     swap \ begin's offset
     here - , \ append calculation
     dup
@@ -158,8 +170,18 @@ alias (here) here
 
 \ if but reversed test
 : unless immediate
-    ' not , \ reverse test
+    lit not , \ reverse test
     [compile] if \ literal immediate 'if'
+;
+
+: count ( caddr1 -- caddr2 u ) dup c@ swap 1+ swap ;
+
+alias (find) find
+hide find
+: find ( c-addr -- c-addr 0 | xt 1 | xt -1 )
+  dup count (find) dup 0= if false exit then
+  nip dup 8+ @ F_IMMED and 0= if >cfa -1 exit then
+  >cfa 1
 ;
 
 alias (word) word
@@ -170,7 +192,14 @@ hide word
   key 2dup <> until \ skip leading delimiters
   here -rot begin rot 1+ 2dup c! -rot drop \ store char
   source nip >in @ <= if drop here - here c! here exit then \ exhausted
-  key 2dup = until 2drop here - here c! here
+  key 2dup = \ char key result --
+  swap \ char result key
+  dup \ char result key key
+  -rot \ char key result key
+  '\n' \ char key result key nl
+  = \ char key result result2
+  or \ char key
+  until 2drop here - here c! here
 ;
 
 : noname
@@ -187,7 +216,7 @@ hide word
 
 : catch ( xt -- exn? )
     dsp@ 8+ >r ( p-stack ptr save +8 for xt on rstack )
-    ' exception-marker 8+ ( push rdrop address )
+    lit exception-marker 8+ ( push rdrop address )
     >r ( onto return stack to fake return addr )
     execute ( execute nested fn )
 ;
@@ -199,7 +228,7 @@ hide word
             dup r0 8- < ( rsp < r0 )
         while
                 dup @ ( get return stack entry )
-                ' exception-marker 8+ = if ( found the marker )
+                lit exception-marker 8+ = if ( found the marker )
                     8+ ( skip marker )
                     rsp! ( restore return stack ptr )
                     ( restore param stack )
@@ -223,15 +252,8 @@ hide word
    0 1- throw
 ;
 
-: find ( c-addr -- c-addr 0 | xt 1 | xt -1 )
-  \ dup count (find) dup 0= if noop false exit then
-  find dup 0= if noop false exit then
-  nip dup 8+ @ F_IMMED and 0= if >cfa -1 exit then
-  >cfa 1
-;
-
 : postpone ( "<spaces>name" -- )
-  bl word find [compile] dup 0= if abort then
+  bl word find dup 0= if abort then
   -1 = if
     ['] lit , , ['] , ,
   else
@@ -239,9 +261,10 @@ hide word
   then
 ; immediate
 
-
-: create ( "<spaces>name" -- ) word create dodoes , 0 , ;
-: <builds word create dodoes , 0 , ;
+alias (create) create
+hide create
+: create ( "<spaces>name" -- ) (word) (create) dodoes , 0 , ;
+: <builds bl word create dodoes , 0 , ;
 : does> r> latest @ >dfa ! ;
 : >body ( xt -- a-addr ) 2 cells + ;
 
@@ -257,11 +280,11 @@ hide word
 : variable create 1 cells allot ;
 
 : constant
-  word create
+  create
   docol ,
-  ' lit ,
+  lit lit ,
   ,
-  ' exit , ;
+  lit exit , ;
 
 : ]l ] postpone literal ;
 
@@ -299,12 +322,56 @@ hide word
         here swap
         dup allot
         0 fill
-    endif ;
+    then ;
 
 : move ( c-from c-to u )
     >r 2dup < if r> cmove> else r> cmove then ;
 
+create pad 1024 allot
 
+: low-byte 255 and ;
+: high-byte 8 rshift low-byte ;
+\ a b c -- a<=b<=c
+: printable-char? ( ch -- flag )
+    dup  h# 20 >=
+    swap h# 7e <= and ;
+
+: s" immediate ( -- addr len )
+    state @ if ( are we compiling )
+        lit litstring ,
+        here ( save address for length on stack )
+        0 , ( dummy length )
+        begin
+            key ( get char of string )
+            dup '"' <>
+        while
+                c, ( copy it )
+        repeat
+        drop ( drop the " char at end )
+        dup ( saved addr for length )
+        here swap - ( calc length )
+        8- ( remove length word )
+        swap ! ( backfill length )
+        align ( get us to multiple of 8 bytes )
+    else ( immediate not compiling )
+        here ( start of temp space )
+        begin
+            key
+            dup '"' <>
+        while
+                over c! ( save )
+                1+ ( increment addr )
+        repeat
+        drop
+        here - ( length )
+        here ( push start addr )
+        swap ( addr len )
+    then
+;
+
+\ cmove's probably working?
+\ s" hey" here 32 + swap cmove noop
+\ s" hey" swap here 32 + rot cmove> noop
 
 \ defer emitting words until proper kernel\emit support
 \ : cr '\n\' emit ;
@@ -318,15 +385,7 @@ hide word
 \ : ':' [ char : ] literal ;
 \ becomes 'interred' as
 \ : ':' 58 literal ;
-: ':' [ char : ] literal ;
-: ';' [ char ; ] literal ;
-: '(' [ char ( ] literal ;
-: ')' [ char ) ] literal ;
-: '"' [ char " ] literal ;
-: 'A' [ char A ] literal ;
-: '0' [ char 0 ] literal ;
-: '-' [ char - ] literal ;
-: '.' [ char . ] literal ;
+
 
 
 
@@ -425,9 +484,9 @@ hide word
 : value ( n -- )
     word create
     docol ,
-    ' lit ,
+    lit lit ,
     ,
-    ' exit ,
+    lit exit ,
 ;
 
 : to immediate ( n -- )
@@ -436,9 +495,9 @@ hide word
     >dfa
     8+
     state @ if ( compiling? )
-        ' lit ,
+        lit lit ,
         ,
-        ' ! ,
+        lit ! ,
     else
         !
     then
@@ -450,9 +509,9 @@ hide word
     >dfa
     8+
     state @ if ( compiling? )
-        ' lit ,
+        lit lit ,
         ,
-        ' +! ,
+        lit +! ,
     else
         +!
     then
@@ -491,10 +550,10 @@ hide word
 , store that 'here' since here is a ariable pointing to where we are in user memory right now
  this is like macros in lisp, dont run this code...return this code in place where it is called )
 : of immediate
-    ' over ,
-    ' = ,
+    lit over ,
+    lit = ,
     [compile] if
-    ' drop ,
+    lit drop ,
 ;
 
 : endof immediate
@@ -502,7 +561,7 @@ hide word
 ;
 
 : endcase immediate
-    ' drop ,
+    lit drop ,
     begin
         ?dup
     while
@@ -645,9 +704,9 @@ hide =next
 
 
 \ \ : variable ( "<spaces>name" -- ) create 1 cells allot ;
-\ : count ( caddr1 -- caddr2 u ) dup c@ swap 1+ swap ;
+\
 \ \ : key ( -- char ) get ;
-: ' ( "<spaces>name" -- xt ) word find >cfa ;
+\ : ' ( "<spaces>name" -- xt ) word find >cfa ;
 
 
 
@@ -742,15 +801,15 @@ hide =next
       <is>
     then
 ; immediate
-
+noop
 : action-of
  state @ if
-     postpone ['] postpone defer@
+     postpone ['] inoop postpone defer@
+     inoop
  else
      ' defer@
  then
 ; immediate
-
 noop
 defer num
 noop
