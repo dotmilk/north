@@ -44,13 +44,14 @@ build/arch/$(arch)/%.o: src/arch/$(arch)/%.asm
 	@nasm -f elf64 -i src/arch/$(arch)/  -g -F dwarf -l $@.lst $< -o $@
 
 build/arch/$(arch)/%.o: forth/%.fs
-	@echo "called still"
+	@echo "-----"
+	@echo $<
+	@echo $@
+	@echo "-----"
 	@mkdir -p $(shell dirname $@)
-	# @cp $< $<.bak
-	# @tr '\n' ' ' < $<.bak > $<
-	@x86_64-elf-objcopy -I binary -O elf64-x86-64 -Bi386 $< $@;
-	# @mv $<.bak $<
+	@x86_64-elf-objcopy -I binary -O elf64-x86-64 -Bi386 $< $@
 
-builtin-files.asm: $(forth_source_files)
-	sh generate-builtins.sh forth/$(shell basename $<)
+builtin-files.asm: Makefile
+	sh generate-builtins.sh $(forth_source_files)
+
 	mv builtin-files.asm src/arch/$(arch)/include/builtin-files.asm

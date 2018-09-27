@@ -76,7 +76,6 @@ alias (here) here
 : >xt
     >cfa @ ;
 
-
 : parse-nt
     word find ;
 
@@ -88,10 +87,7 @@ alias (here) here
 
 \ force an otherwise immediate word to compile
 : [compile] immediate
-    word \ get/eat next word
-    find \ find it
-    >cfa \ get code word
-    , \ append that
+   ' ,
 ;
 
 : '\n' 10 ; \ newline
@@ -174,6 +170,41 @@ alias (here) here
     [compile] if \ literal immediate 'if'
 ;
 
+: case immediate
+    0 ( mark the end of stack )
+;
+
+\ CASE's implementation imported from Gforth.
+\
+\ Usage
+\ ( n )
+\ CASE
+\    1 OF .... ENDOF
+\    2 OF .... ENDOF
+\    OTHERWISE
+\ END-CASE
+\
+\ Remember not to consume the element in the OTHERWISE case.
+: of immediate
+    lit over ,
+    lit = ,
+    [compile] if
+    lit drop ,
+;
+
+: endof immediate
+    [compile] else
+;
+
+: endcase immediate
+    lit drop ,
+    begin
+        ?dup
+    while
+            [compile] then
+    repeat
+;
+
 : count ( caddr1 -- caddr2 u ) dup c@ swap 1+ swap ;
 
 alias (find) find
@@ -184,9 +215,60 @@ hide find
   >cfa 1
 ;
 
+: drop-nop 0 ;
+
+: store-char
+    swap 1+ 2dup c! swap drop \ store char
+;
+
+: input-empty?
+    source nip
+    >in @ <= ;
+
+: slurp-while-ws
+    begin
+        input-empty? if 0 exit then
+        key case
+            09 of endof
+            10 of endof
+            13 of endof
+            32 of endof
+            exit
+        endcase
+    again ;
+
+: slurp-until-ws
+    begin
+        store-char
+        input-empty? if 0 exit then
+        key case
+            09 of exit endof
+            10 of exit endof
+            13 of exit endof
+            32 of exit endof
+            drop-nop
+        endcase
+    again ;
+
 alias (word) word
 hide word
-: word ( char "<chars>ccc<char>" -- c-addr )
+: word ( "<ws+>ccc<ws>" -- c-addr )
+    slurp-while-ws dup 0= if \ nothing was in buffer
+        here c! here exit
+    then
+    here swap \ setup for first slurp loop
+    slurp-until-ws dup 0= if
+        here - here c! here exit
+    then
+    here - here c! here
+;
+
+hide store-char
+hide drop-nop
+hide slurp-while-ws
+hide slurp-until-ws
+
+: delimited-word ( char "<chars>ccc<char>" -- c-addr )
   0 begin drop
   source nip >in @ <= if drop 0 here c! here exit then \ nothing in buffer
   key 2dup <> until \ skip leading delimiters
@@ -253,7 +335,7 @@ hide word
 ;
 
 : postpone ( "<spaces>name" -- )
-  bl word find dup 0= if abort then
+  word find dup 0= if abort then
   -1 = if
     ['] lit , , ['] , ,
   else
@@ -264,9 +346,40 @@ hide word
 alias (create) create
 hide create
 : create ( "<spaces>name" -- ) (word) (create) dodoes , 0 , ;
-: <builds bl word create dodoes , 0 , ;
+: <builds word create dodoes , 0 , ;
 : does> r> latest @ >dfa ! ;
 : >body ( xt -- a-addr ) 2 cells + ;
+
+: defer create ['] abort , does> @ execute ;
+
+: defer@ ( xt1 -- xt2 )
+  >body @ ;
+
+: defer! ( xt2 xt1 -- )
+  >body ! ;
+
+: <is> ( xt "name" -- )
+    ' defer! ;
+
+: [is] ( compilation: "name" -- ; run-time: xt -- )
+    postpone ['] postpone defer! ; immediate
+
+: is
+    state @ if
+      postpone [is]
+    else
+      <is>
+    then
+; immediate
+
+: action-of
+ state @ if
+     postpone ['] inoop postpone defer@
+     inoop
+ else
+     ' defer@
+ then
+; immediate
 
 \ : variable
 \   here @ \ get current here
@@ -303,6 +416,10 @@ hide create
 
 \ roll asm
 
+
+
+
+
 : ndrop ( xn .. x1 x0 n --- )
     1+
     wordsize *
@@ -334,7 +451,7 @@ create pad 1024 allot
 \ a b c -- a<=b<=c
 : printable-char? ( ch -- flag )
     dup  h# 20 >=
-    swap h# 7e <= and ;
+    swap h# 7E <= and ;
 
 : s" immediate ( -- addr len )
     state @ if ( are we compiling )
@@ -369,6 +486,68 @@ create pad 1024 allot
     then
 ;
 
+: get-char
+    begin
+        key case
+            09 of endof
+            10 of endof
+            13 of endof
+            32 of endof
+            exit
+        endcase
+    again ;
+
+: [get-char] immediate
+    get-char [compile] literal ;
+
+\ user-base noop
+\ here noop
+\ : unused user-base here - ;
+
+: buffer>start ( addr -- start )
+    @ ;
+
+: buffer>size ( addr -- size )
+    cell + @ ;
+
+: buffer>loaded ( addr -- isloaded? )
+    2 cells + ;
+
+: buffer>nt ( addr -- addr u )
+    3 cells + @ ;
+
+: buffer>string ( addr -- addr u )
+    dup buffer>start swap buffer>size ;
+
+: buffer-loaded? ( addr -- flag )
+    buffer>loaded @ ;
+
+: mark-buffer-as-loaded ( addr -- )
+    buffer>loaded true swap ! ;
+
+@forth/core.fs mark-buffer-as-loaded
+
+defer load-buffer-print-hook
+' drop is load-buffer-print-hook
+
+variable load-buffer-print
+load-buffer-print on
+
+: load-buffer ( addr -- )
+    dup mark-buffer-as-loaded
+    load-buffer-print @ if
+        dup load-buffer-print-hook
+    then
+    buffer>string change-memory-buffer ;
+
+: require-buffer ( addr -- )
+    dup buffer-loaded? if drop else load-buffer then ;
+
+: enum dup constant 1+ ;
+: end-enum drop ;
+noop
+@forth/structures.fs require-buffer
+noop
 \ cmove's probably working?
 \ s" hey" here 32 + swap cmove noop
 \ s" hey" swap here 32 + rot cmove> noop
@@ -541,33 +720,7 @@ create pad 1024 allot
 
 \ dump missing
 
-: case immediate
-    0 ( mark the end of stack )
-;
-(
-' word , is a common idiom for 'building' in essence saying
-' get the address of the code of the next word
-, store that 'here' since here is a ariable pointing to where we are in user memory right now
- this is like macros in lisp, dont run this code...return this code in place where it is called )
-: of immediate
-    lit over ,
-    lit = ,
-    [compile] if
-    lit drop ,
-;
 
-: endof immediate
-    [compile] else
-;
-
-: endcase immediate
-    lit drop ,
-    begin
-        ?dup
-    while
-            [compile] then
-    repeat
-;
 
 : cfa>
     latest @
@@ -771,46 +924,6 @@ hide =next
 
 
 
-: defer create ['] abort , does> @ execute ;
-
-\ : defer@
-\     >dfa @
-\ ;
-\ : defer!
-\     256 noop drop
-\     >dfa !
-\ ;
-
-
-: defer@ ( xt1 -- xt2 )
-  >body @ ;
-
-: defer! ( xt2 xt1 -- )
-  >body ! ;
-
-: <is> ( xt "name" -- )
-    ' defer! ;
-
-: [is] ( compilation: "name" -- ; run-time: xt -- )
-    postpone ['] postpone defer! ; immediate
-
-: is
-    state @ if
-      postpone [is]
-    else
-      <is>
-    then
-; immediate
-noop
-: action-of
- state @ if
-     postpone ['] inoop postpone defer@
-     inoop
- else
-     ' defer@
- then
-; immediate
-noop
 defer num
 noop
 : ab num ;

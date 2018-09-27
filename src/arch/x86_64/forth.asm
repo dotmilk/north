@@ -53,22 +53,6 @@ code_%3:
         jmp [rax]            ; go there
 %endmacro
 
-%macro compileInstruction 1
-        dq LIT
-        %1
-        dq COMMA
-%endmacro
-
-%macro NEXT_COMP 0
-        dq LIT
-        lodsq
-        dq COMMA
-        dq LIT
-        jmp [rax]
-        dq COMMA
-%endmacro
-
-
 %macro PUSHRSP 1
         lea rbp, [rbp-8]     ; offset r_stack
         mov [rbp], %1        ; put val on r_stack
@@ -79,13 +63,30 @@ code_%3:
         lea rbp, [rbp+8]     ; offset r_stack
 %endmacro
 
-                             ; AT&T Syntax
-                             ; instr   source,dest
-                             ; movl    (%ecx),%eax
+%macro PUSHEIS 1
+        push r8                 ; backup r8
+        push r9                 ; backup r9
+        mov r8, [eisptr]        ; get current ptr
+        lea r8, [r8-8]          ; offset us
+        mov [eisptr], r8        ; store new ptr
+        mov r9, qword %1        ; get val
+        mov [r8], r9            ; store val
+        pop r9                  ; restore r9
+        pop r8                  ; restore r8
+%endmacro
 
-                             ; Intel Syntax
-                             ; instr   dest,source
-                             ; mov     eax,[ecx]
+%macro POPEIS 1
+        push r8                 ; backup r8
+        push r9                 ; backup r9
+        mov r8, [eisptr]        ; get ptr
+        mov r9, [r8]            ; deref for val
+        mov %1, r9              ; deref to %1
+        lea r8, [r8+8]          ; new ptr
+        mov [eisptr], r8        ; store it
+        pop r9                  ; restore r9
+        pop r8                  ; restore r8
+%endmacro
+
 section .text
 align 8
 
@@ -95,8 +96,6 @@ _NEXT:
 DOCOL:
         PUSHRSP rsi          ; return ptr on r_stack
         lea rsi, [rax + 8]   ; inc codeword to first instruction
-        ; add rax, 8           ; inc codeword ptr
-        ; mov rsi, rax         ; to first instruction
         NEXT
 
 section .text
@@ -106,17 +105,12 @@ start_forth:
         mov rbp, r_stack_top ; point to return stack
         mov rsp, stack_top   ; point to the stack
         mov [var_SZ], rsp    ; save a pointer to stack top
-        ; push rax
-        ; push rcx
-        ; push rdx
-        ; call clear_screen
-        ; pop rdx
-        ; pop rcx
-        ; pop rax
+
         ; need to set bufftop and buffpos to
         ; input_buffer_ptr
         mov r10, __DS
         mov [var_HERE], r10
+        mov [var_UB], r10
         xor r8,r8
         xor r9,r9
         mov [buffpos], r9
@@ -520,7 +514,7 @@ var_%3:
         dq %5
 %endmacro
         defvar "sp-limit",8,sp_limit,0,stack+(stack_size*8)
-        defvar "word_count",10,WC,0,word_lines
+        defvar "user-base",9,UB
         defvar "state",5,STATE
         defvar "tmpbase",7,TMPBASE
         defvar "here",4,HERE
@@ -595,23 +589,23 @@ var_%3:
 
         ; ---- Input ----
 
-        defcode "h#",2,TMPHEX
+        defcode "h#",2,TMPHEX,F_IMMED
         mov qword [var_TMPBASE], 0x10
         NEXT
 
-        defcode "d#",2,TMPDEC
+        defcode "d#",2,TMPDEC,F_IMMED
         mov qword [var_TMPBASE], 0xA
         NEXT
 
-        defcode "o#",2,TMPOCT
+        defcode "o#",2,TMPOCT,F_IMMED
         mov qword [var_TMPBASE], 0x8
         NEXT
 
-        defcode "b#",2,TMPBIN
+        defcode "b#",2,TMPBIN,F_IMMED
         mov qword [var_TMPBASE], 0x2
         NEXT
 
-        defcode "ctb",3,CTB
+        defcode "ctb",3,CTB,F_IMMED
         mov qword [var_TMPBASE], 0
         NEXT
 
@@ -620,21 +614,29 @@ var_%3:
         push rax
         NEXT
 _KEY:
-        inc qword [word_lines]
+        call _PEEK
+        inc qword [buffpos]     ; update buffpos
+        ret
+
+        defcode "peek",4,PEEK
+        call _PEEK
+        push rax
+        NEXT
+_PEEK:
         mov rbx, [buffpos]      ; is buffpos
         cmp rbx, [buffsize]      ; the top of buffer?
-        jge _KEY.exhausted      ; get more then
+        jge _PEEK.exhausted      ; get more then
         xor rax, rax
         mov rbx, [buffaddr]     ; buffer start +
         add rbx, [buffpos]      ; our position =
         mov al, [rbx]           ; next byte / key
-        inc qword [buffpos]     ; update buffpos
+        ; inc qword [buffpos]     ; update buffpos
         ret
 .exhausted:                     ; out of input get more bytes
         ; the place to swap between memory / key input
-        mov rdx, input_source_id
+        mov rdx, [buffsid]
         cmp rdx, -1             ;
-        je _KEY.eof             ; we are out of in memory 'file'
+        je _PEEK.eof             ; we are out of in memory 'file'
         hlt                     ; halt for now
         push rsi                ; refill from keyboard
         mov rsi, buffer   ; since buffer is exhausted
@@ -643,12 +645,13 @@ _KEY:
         call refill_buffer
         pop rsi
 .eof:
-        mov rsi, buffer         ; reset our pointers to
-        mov [buffpos], rsi     ;  buffer start and buffpos
-        ; set bufftop to buffer later?
-        xor rax, rax            ; return 0
-        call debug_s
-        ret
+        call _restore_memory
+        jmp _PEEK
+        ; mov rsi, buffer         ; reset our pointers to
+        ; mov [buffpos], rsi     ;  buffer start and buffpos
+        ; ; set bufftop to buffer later?
+        ; xor rax, rax            ; return 0
+        ; ret
 .err:
         hlt
 buffsize:
@@ -692,6 +695,11 @@ _WORD:
 ; first non blank non \ comment
 .start:
         call _KEY               ; get byte of input
+        ; cmp al,0
+        ; jnz _WORD.notEof
+        ; xor rax,rax
+        ; ret
+.notEof:
         cmp al, `\\`            ; \ start of comment
         je _WORD.skip           ; skip it if so
         cmp al, ' '             ; is it space?
@@ -725,8 +733,6 @@ _WORD:
 section .bss                   ; quick buffer
 word_buffer:
         resb 32
-word_lines:
-        resq 5
 
 ; ---- Number ----
         defcode "number",6,NUMBER
@@ -996,10 +1002,40 @@ _ISIMM:
 
         ; TELL... needs EMIT too
 
+        defcode "change-memory-buffer",20,EISC
+        pop rax                 ; size
+        pop rbx                 ; addr
+
+        PUSHEIS [buffaddr]
+        PUSHEIS [buffsize]
+        PUSHEIS [buffpos]
+        PUSHEIS [buffsid]
+
+        mov [buffsize], rax
+        mov [buffaddr], rbx
+        mov qword [buffpos], 0
+        mov qword [buffsid], -1
+        NEXT
+
+        defcode "restore-memory-buffer",21,EISR
+        call _restore_memory
+        NEXT
+_restore_memory:
+        POPEIS [buffsid]
+        POPEIS [buffpos]
+        POPEIS [buffsize]
+        POPEIS [buffaddr]
+        ret
+
+section .data
+eisptr:
+        dq eis_top
+
         defword "quit",4,QUIT
         dq RZ, RSPSTORE         ; R0 RSP!
         dq INTERPRET            ; interpret next word
         dq BRANCH, -16          ; looooop
+
 
 
 ; ---- Xtra-Beefy Code ----
@@ -1280,7 +1316,7 @@ refill_buffer:
         hlt
 section .data
         foo db '12'
-        input_source_id dq -1
+        buffsid dq -1
 section .bss
 alignb 4096
 stack:
@@ -1293,6 +1329,9 @@ r_stack_top:
 alignb 4096
 buffer:
         resb input_buffer_size
+eis:
+        resq 256
+eis_top:
 
 scratch:
         resb 64
