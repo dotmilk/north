@@ -63,26 +63,26 @@ code_%3:
         lea rbp, [rbp+8]     ; offset r_stack
 %endmacro
 
-%macro PUSHEIS 1
+%macro PUSHTMP 1
         push r8                 ; backup r8
         push r9                 ; backup r9
-        mov r8, [eisptr]        ; get current ptr
+        mov r8, [tmpptr]        ; get current ptr
         lea r8, [r8-8]          ; offset us
-        mov [eisptr], r8        ; store new ptr
+        mov [tmpptr], r8        ; store new ptr
         mov r9, qword %1        ; get val
         mov [r8], r9            ; store val
         pop r9                  ; restore r9
         pop r8                  ; restore r8
 %endmacro
 
-%macro POPEIS 1
+%macro POPTMP 1
         push r8                 ; backup r8
         push r9                 ; backup r9
-        mov r8, [eisptr]        ; get ptr
+        mov r8, [tmpptr]        ; get ptr
         mov r9, [r8]            ; deref for val
         mov %1, r9              ; deref to %1
         lea r8, [r8+8]          ; new ptr
-        mov [eisptr], r8        ; store it
+        mov [tmpptr], r8        ; store it
         pop r9                  ; restore r9
         pop r8                  ; restore r8
 %endmacro
@@ -513,6 +513,7 @@ align 8
 var_%3:
         dq %5
 %endmacro
+        defvar "compiling-nextname",18,compiling_nextname,0,0
         defvar "sp-limit",8,sp_limit,0,stack+(stack_size*8)
         defvar "user-base",9,UB
         defvar "state",5,STATE
@@ -538,6 +539,17 @@ var_%3:
         defconst "F_HIDDEN",8,__F_HIDDDEN,F_HIDDEN
         defconst "F_LENMASK",9,__F_LENMASK,F_LENMASK
 
+; tmp stack
+
+        defcode ">tmp",4,TOTMP
+        pop rax
+        PUSHTMP rax
+        NEXT
+
+        defcode "tmp>",4,FROMTMP
+        POPTMP rax
+        push rax
+        NEXT
 ; return stack
         defcode ">r",2,TOR
         pop rax                 ; from param stack
@@ -687,11 +699,18 @@ color_b:
 
 ; ---- Word ----
         defcode "word",4,$WORD
+        mov rdx, [var_compiling_nextname]
+        test rdx, rdx
+        jz .regular
+        mov qword [var_compiling_nextname], 0
+        NEXT
+.regular:
         call _WORD
         push rdi                ; base addr of word
         push rcx                ; length
         NEXT
 _WORD:
+
 ; first non blank non \ comment
 .start:
         call _KEY               ; get byte of input
@@ -825,14 +844,14 @@ _FIND:
         pop rcx                 ; these
         jne _FIND.next
 
-        push rcx
-        push rdi
-        lea rsi, [rdx+9]
-        mov rdi, scratch
-        mov rcx, 32
-        rep movsb
-        pop rdi
-        pop rcx
+        ; push rcx
+        ; push rdi
+        ; lea rsi, [rdx+9]
+        ; mov rdi, scratch
+        ; mov rcx, 32
+        ; rep movsb
+        ; pop rdi
+        ; pop rcx
         pop rsi                 ; they were the same
         mov rax, rdx            ; return header pointer
         ret
@@ -1006,10 +1025,10 @@ _ISIMM:
         pop rax                 ; size
         pop rbx                 ; addr
 
-        PUSHEIS [buffaddr]
-        PUSHEIS [buffsize]
-        PUSHEIS [buffpos]
-        PUSHEIS [buffsid]
+        PUSHTMP [buffaddr]
+        PUSHTMP [buffsize]
+        PUSHTMP [buffpos]
+        PUSHTMP [buffsid]
 
         mov [buffsize], rax
         mov [buffaddr], rbx
@@ -1021,15 +1040,14 @@ _ISIMM:
         call _restore_memory
         NEXT
 _restore_memory:
-        POPEIS [buffsid]
-        POPEIS [buffpos]
-        POPEIS [buffsize]
-        POPEIS [buffaddr]
+        POPTMP [buffsid]
+        POPTMP [buffpos]
+        POPTMP [buffsize]
+        POPTMP [buffaddr]
         ret
 
 section .data
-eisptr:
-        dq eis_top
+tmpptr: dq tmp_top
 
         defword "quit",4,QUIT
         dq RZ, RSPSTORE         ; R0 RSP!
@@ -1106,8 +1124,6 @@ interpret_is_lit:
         defcode "execute",7,EXECUTE
         pop rax                 ; get xt into rax
         jmp [rax]               ; jump there
-
-
 
         defconst "dodoes",6,_dodoes,._dodo
 ._dodo:
@@ -1214,8 +1230,11 @@ interpret_is_lit:
         jne code_OPEN_COMMENT.start
         NEXT
 
-
         defcode "inoop",5,inoop,F_IMMED
+        nop
+        NEXT
+
+        defcode "nop",3,NOPP
         nop
         NEXT
 
@@ -1233,13 +1252,8 @@ interpret_is_lit:
 
 
 
-
-
-
-
-
-        defcode "DBG",4,DBG
-        call debug_s
+        ; defcode "DBG",4,DBG
+        ; call debug_s
 
         mystring db "hey yr this is a thing woo"
         db 0x00
@@ -1329,11 +1343,11 @@ r_stack_top:
 alignb 4096
 buffer:
         resb input_buffer_size
-eis:
+tmp:
         resq 256
-eis_top:
-
+tmp_top:
+        resq 1
 scratch:
-        resb 64
+        resq 1
 __DS:
         resq 262144

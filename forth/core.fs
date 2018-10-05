@@ -1,4 +1,5 @@
 ( )
+
 : alias
     word create word find >cfa @
     \ skip check for now dup docol = if abort then
@@ -87,7 +88,7 @@ alias (here) here
 
 \ force an otherwise immediate word to compile
 : [compile] immediate
-   ' ,
+   word find >cfa ,
 ;
 
 : '\n' 10 ; \ newline
@@ -120,6 +121,8 @@ alias (here) here
     here swap - \ get difference of old here and here
     swap ! \ store offset in back-filled location
 ;
+
+alias endif then
 
 : else immediate
     lit branch , \ unconditional branch over false-part
@@ -207,10 +210,13 @@ alias (here) here
 
 : count ( caddr1 -- caddr2 u ) dup c@ swap 1+ swap ;
 
+: move ( c-from c-to u )
+    >r 2dup < if r> cmove> else r> cmove then ;
+
 alias (find) find
 hide find
 : find ( c-addr -- c-addr 0 | xt 1 | xt -1 )
-  dup count (find) dup 0= if false exit then
+  dup count (find) dup 0= if exit then
   nip dup 8+ @ F_IMMED and 0= if >cfa -1 exit then
   >cfa 1
 ;
@@ -248,10 +254,12 @@ hide find
             32 of exit endof
             drop-nop
         endcase
+
     again ;
 
 alias (word) word
 hide word
+\ needs compiling_nextname support
 : word ( "<ws+>ccc<ws>" -- c-addr )
     slurp-while-ws dup 0= if \ nothing was in buffer
         here c! here exit
@@ -267,7 +275,7 @@ hide store-char
 hide drop-nop
 hide slurp-while-ws
 hide slurp-until-ws
-
+\ needs compiling_nextname support
 : delimited-word ( char "<chars>ccc<char>" -- c-addr )
   0 begin drop
   source nip >in @ <= if drop 0 here c! here exit then \ nothing in buffer
@@ -284,7 +292,7 @@ hide slurp-until-ws
   until 2drop here - here c! here
 ;
 
-: noname
+: :noname
     0 0 create ( word with no name )
     here ( here is xt addr )
     docol , ( the xt )
@@ -374,21 +382,49 @@ hide create
 
 : action-of
  state @ if
-     postpone ['] inoop postpone defer@
-     inoop
+     postpone ['] postpone defer@
  else
      ' defer@
  then
 ; immediate
 
-\ : variable
-\   here @ \ get current here
-\   1 cells allot \ allot memory
-\   word create \ makeheader
-\   docol ,
-\   ' lit ,
-\   , \
-\   ' exit , ;
+: value ( n -- )
+    word create
+    docol ,
+    lit lit ,
+    ,
+    lit exit ,
+;
+
+: to immediate ( n -- )
+    word
+    find
+    >dfa
+    8+
+    state @ if ( compiling? )
+        lit lit ,
+        ,
+        lit ! ,
+    else
+        !
+    then
+;
+
+: +to immediate ( n -- )
+    word
+    find
+    >dfa
+    8+
+    state @ if ( compiling? )
+        lit lit ,
+        ,
+        lit +! ,
+    else
+        +!
+    then
+;
+
+0 value anon
 
 : variable create 1 cells allot ;
 
@@ -416,10 +452,6 @@ hide create
 
 \ roll asm
 
-
-
-
-
 : ndrop ( xn .. x1 x0 n --- )
     1+
     wordsize *
@@ -441,8 +473,7 @@ hide create
         0 fill
     then ;
 
-: move ( c-from c-to u )
-    >r 2dup < if r> cmove> else r> cmove then ;
+
 
 create pad 1024 allot
 
@@ -453,38 +484,7 @@ create pad 1024 allot
     dup  h# 20 >=
     swap h# 7E <= and ;
 
-: s" immediate ( -- addr len )
-    state @ if ( are we compiling )
-        lit litstring ,
-        here ( save address for length on stack )
-        0 , ( dummy length )
-        begin
-            key ( get char of string )
-            dup '"' <>
-        while
-                c, ( copy it )
-        repeat
-        drop ( drop the " char at end )
-        dup ( saved addr for length )
-        here swap - ( calc length )
-        8- ( remove length word )
-        swap ! ( backfill length )
-        align ( get us to multiple of 8 bytes )
-    else ( immediate not compiling )
-        here ( start of temp space )
-        begin
-            key
-            dup '"' <>
-        while
-                over c! ( save )
-                1+ ( increment addr )
-        repeat
-        drop
-        here - ( length )
-        here ( push start addr )
-        swap ( addr len )
-    then
-;
+
 
 : get-char
     begin
@@ -545,12 +545,42 @@ load-buffer-print on
 
 : enum dup constant 1+ ;
 : end-enum drop ;
-noop
-@forth/structures.fs require-buffer
-noop
-\ cmove's probably working?
-\ s" hey" here 32 + swap cmove noop
-\ s" hey" swap here 32 + rot cmove> noop
+
+: require immediate
+    '
+    state @ if
+        postpone literal
+        postpone execute
+        postpone require-buffer
+    else
+        execute
+        require-buffer
+    then ;
+
+: include immediate
+    '
+    state @ if
+        postpone literal
+        postpone execute
+        postpone load-buffer
+    else
+        execute
+        require-buffer
+    then ;
+
+require @forth/structures.fs
+require @forth/interpreter.fs
+require @forth/strings.fs
+
+: feature ( flag -- )
+    word swap if
+        nextname count alias
+    else
+        2drop
+    then ;
+
+
+
 
 \ defer emitting words until proper kernel\emit support
 \ : cr '\n\' emit ;
@@ -564,9 +594,6 @@ noop
 \ : ':' [ char : ] literal ;
 \ becomes 'interred' as
 \ : ':' 58 literal ;
-
-
-
 
 
 : ( immediate
@@ -660,41 +687,7 @@ noop
 
 
 
-: value ( n -- )
-    word create
-    docol ,
-    lit lit ,
-    ,
-    lit exit ,
-;
 
-: to immediate ( n -- )
-    word
-    find
-    >dfa
-    8+
-    state @ if ( compiling? )
-        lit lit ,
-        ,
-        lit ! ,
-    else
-        !
-    then
-;
-
-: +to immediate ( n -- )
-    word
-    find
-    >dfa
-    8+
-    state @ if ( compiling? )
-        lit lit ,
-        ,
-        lit +! ,
-    else
-        +!
-    then
-;
 
 \ id. missing
 
@@ -957,6 +950,7 @@ noop
 \ : and! dup @ rot and swap ! ;
 \ : or! dup @ rot or swap ! ;
 
+: octal 8 base ! ;
 : decimal 10 base ! ;
 : hex 16 base ! ;
 
