@@ -1,11 +1,16 @@
+        ; r8 / r9 scratch registers - could be clobbered
+        ;
+
 global start_forth
 global scratch
 global debug_s
 extern idt
 bits 64
 %define gdtCsSelector 0x08
-%define r_stack_size 4096
-%define stack_size 1000
+%define r_stack_size 1000
+%define stack_size 50
+%define tmp_stack_size 1000
+
 %define input_buffer_size 4096
 
 %define F_IMMED 0x80         ; Immediate flag
@@ -13,6 +18,39 @@ bits 64
 %define F_LENMASK 0x1f       ; Length mask
 
 %define link 0
+
+; name size
+%macro reserve_stack 2
+section .data
+align 8
+%1_ptr: dq %1_top
+section .bss
+align 8
+%1:
+        resq %2
+%1_top:
+%endmacro
+
+%macro make_stack 2
+%define name %[%1]_ptr
+        reserve_stack %1,%2
+%macro PUSH%[%1] 1
+        mov r8, [name]        ; get current ptr
+        lea r8, [r8-8]          ; offset us
+        mov [name], r8        ; store new ptr
+        mov r9, qword %1        ; get val
+        mov [r8], r9            ; store val
+%endmacro
+
+%macro POP%[%1] 1
+        mov r8, [name]        ; get ptr
+        mov r9, [r8]            ; deref for val
+        mov %1, r9              ; deref to %1
+        lea r8, [r8+8]          ; new ptr
+        mov [name], r8        ; store it
+%endmacro
+
+%endmacro
 
 ; ---- header for forth definitions
 ; name - namelen - label - flags
@@ -63,29 +101,8 @@ code_%3:
         lea rbp, [rbp+8]     ; offset r_stack
 %endmacro
 
-%macro PUSHTMP 1
-        push r8                 ; backup r8
-        push r9                 ; backup r9
-        mov r8, [tmpptr]        ; get current ptr
-        lea r8, [r8-8]          ; offset us
-        mov [tmpptr], r8        ; store new ptr
-        mov r9, qword %1        ; get val
-        mov [r8], r9            ; store val
-        pop r9                  ; restore r9
-        pop r8                  ; restore r8
-%endmacro
-
-%macro POPTMP 1
-        push r8                 ; backup r8
-        push r9                 ; backup r9
-        mov r8, [tmpptr]        ; get ptr
-        mov r9, [r8]            ; deref for val
-        mov %1, r9              ; deref to %1
-        lea r8, [r8+8]          ; new ptr
-        mov [tmpptr], r8        ; store it
-        pop r9                  ; restore r9
-        pop r8                  ; restore r8
-%endmacro
+        make_stack TMP, tmp_stack_size
+        make_stack sorder, 512
 
 section .text
 align 8
@@ -113,6 +130,17 @@ start_forth:
         mov [var_UB], r10
         xor r8,r8
         xor r9,r9
+        ; core wid
+        mov r8, name_NOOP
+        mov [builtin_wordlist], r8   ; basically latest
+        mov [builtin_wordlist+8], r9 ; no custom fn
+        mov [builtin_wordlist+16], r9 ; no name
+        mov [builtin_wordlist+24], r9 ; no prev
+        PUSHsorder builtin_wordlist
+        mov qword [var_current], builtin_wordlist
+        ; buffer stuff
+        xor r9,r9
+        xor r8,r8
         mov [buffpos], r9
         lea r8, [_binary_forth_core_fs_size] ; size
         mov r9, _binary_forth_core_fs_start
@@ -513,6 +541,7 @@ align 8
 var_%3:
         dq %5
 %endmacro
+        defvar "current",7,current
         defvar "compiling-nextname",18,compiling_nextname,0,0
         defvar "sp-limit",8,sp_limit,0,stack+(stack_size*8)
         defvar "user-base",9,UB
@@ -571,7 +600,7 @@ var_%3:
         dq FROMR
         dq EXIT
 
-        defcode "r@",2,RFETCH   ; bb4w...why not alias rsp@?
+        defcode "r@",2,RFETCH
         mov rax, [rbp]
         push rax
         NEXT
@@ -822,19 +851,35 @@ _NUMBER:
         push rax                ; addr of entry or null
         NEXT
 
-; ---- Find ----
+
+
+; ---- Find ---- dont touch rax / rcx / rdi / rdx
 _FIND:
         push rsi                ; save for string comp
+.load_sorder:
+        mov rbx, [sorder_ptr]   ; first wid to search
+.loop:
+        mov rdx, [rbx]          ; deref the wid
+        mov rdx, [rdx]           ; wid latest
+        ; mov rdx, [var_LATEST]     ; name header of latest word
+        jmp _Search
+.reenter:
+        test rax, rax
+        jnz _FIND.done
+        add rbx, 8
+        cmp rbx, sorder_top     ; have we reached the end of wordlists?
+        jne _FIND.loop
+.done:
+        ret
 
-        mov rdx, [var_LATEST]     ; name header of latest word
-.start:
+_Search:
         test rdx, rdx           ; end of linked list?
-        je _FIND.notFound
+        je _Search.notFound
         xor rax, rax            ; compare lengths first
         mov al, [rdx+8]         ; al = flags + length field
         and al, (F_HIDDEN | F_LENMASK) ; al = name length
         cmp al, cl                     ; correct length ?
-        jne _FIND.next
+        jne _Search.next
 
         push rcx                ; save length
         push rdi                ; save the addess repe will change this
@@ -842,26 +887,17 @@ _FIND:
         repe cmpsb              ; compare while ==
         pop rdi                 ; restore
         pop rcx                 ; these
-        jne _FIND.next
-
-        ; push rcx
-        ; push rdi
-        ; lea rsi, [rdx+9]
-        ; mov rdi, scratch
-        ; mov rcx, 32
-        ; rep movsb
-        ; pop rdi
-        ; pop rcx
+        jne _Search.next
         pop rsi                 ; they were the same
         mov rax, rdx            ; return header pointer
-        ret
+        jmp _FIND.reenter
 .next:
         mov rdx, [rdx]
-        jmp _FIND.start
+        jmp _Search
 .notFound:
         pop rsi                 ; restore rsi
         xor rax, rax            ; return 0 / not found
-        ret
+        jmp _FIND.reenter
 
         defcode "source",6,SOURCE
         push qword [buffaddr]
@@ -899,7 +935,9 @@ _TCFA:
         pop rbx                 ; addr name
 
         mov rdi, [var_HERE]       ; addr of header
-        mov rax, [var_LATEST]     ; link ptr
+        mov rax, [var_current]
+        mov rax, [rax]
+        ; mov rax, [var_LATEST]     ; link ptr
         stosq                   ; store it
 
         mov al,cl               ; length
@@ -910,8 +948,12 @@ _TCFA:
         pop rsi
         add rdi, 7              ; align next 4 byte
         and rdi, ~7
-
+        nop
+        mov r9, var_current
+        mov r9, [r9]
+        mov r11, [r9]
         mov rax, [var_HERE]
+        mov [r9], rax
         mov [var_LATEST], rax
         mov [var_HERE], rdi
         NEXT
@@ -1046,8 +1088,8 @@ _restore_memory:
         POPTMP [buffaddr]
         ret
 
-section .data
-tmpptr: dq tmp_top
+; section .data
+; tmpptr: dq tmp_top
 
         defword "quit",4,QUIT
         dq RZ, RSPSTORE         ; R0 RSP!
@@ -1338,16 +1380,12 @@ stack:
 stack_top:
 alignb 4096
 r_stack:
-         resw 1000
+         resq r_stack_size
 r_stack_top:
-alignb 4096
 buffer:
         resb input_buffer_size
-tmp:
-        resq 256
-tmp_top:
-        resq 1
 scratch:
         resq 1
+builtin_wordlist: resq 4
 __DS:
         resq 262144

@@ -146,6 +146,8 @@ enable_paging:
 
         ret
 
+
+
 struc gdt_entry
 .limit_low:   resb 2
 .base_low:    resb 2

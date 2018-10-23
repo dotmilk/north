@@ -7,13 +7,16 @@
 ; immediate
 
 hide '
+
 : ' ( "<spaces>name" -- xt ) word find >cfa ;
 
 : wordsize 8 ;
+
 : char+ 1 + ;
 : cell 8 ;
 : cells  8 * ;
 : cell+ 1 cells + ;
+
 \ here in asm, moar ans
 alias (here) here
 : here ( -- addr ) here @ ;
@@ -389,7 +392,7 @@ hide create
 ; immediate
 
 : value ( n -- )
-    word create
+    (word) (create)
     docol ,
     lit lit ,
     ,
@@ -568,6 +571,7 @@ load-buffer-print on
         require-buffer
     then ;
 
+inoop
 require @forth/structures.fs
 require @forth/interpreter.fs
 require @forth/strings.fs
@@ -579,8 +583,7 @@ require @forth/strings.fs
         2drop
     then ;
 
-
-
+inoop
 
 \ defer emitting words until proper kernel\emit support
 \ : cr '\n\' emit ;
@@ -613,13 +616,10 @@ require @forth/strings.fs
 ;
 
 
-
-
-
 : decimal ( -- ) 10 base ! ;
 : hex ( -- ) 16 base ! ;
 
-\ missing . and various integer printing ops
+\ missing . and vrious integer printing ops
 
 
 ( c a b within true if a <= c and c < b  )
@@ -982,4 +982,4 @@ char t display
 test-do
 \ : nt' (word) (find) ;
 \ : comp' nt' >cfa
-noop
+nop

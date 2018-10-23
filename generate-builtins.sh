@@ -2,9 +2,9 @@ OUTPUT=builtin-files.asm
 
 echo "; autogen" > $OUTPUT
 for file in $*; do
-    echo "-*-"
-    echo $file
-    echo "-*-"
+    # echo "-*-"
+    # echo $file
+    # echo "-*-"
     BN=`echo $file | sed 's/\//_/g' | sed 's/\./_/g'`
     NAME=@$file
     VAR_NAME="${BN}_l"
@@ -17,7 +17,8 @@ for file in $*; do
     echo "        extern $SYMBOL_START"               >> $OUTPUT
     echo "        extern $SYMBOL_SIZE"                >> $OUTPUT
     echo "        defcode \"$NAME\",$NAME_SIZE,__$BN" >> $OUTPUT
-    echo "        push ___${BN}_"                     >> $OUTPUT
+    echo "        mov r9, ___${BN}_"                     >> $OUTPUT
+    echo "        push r9"                     >> $OUTPUT
     echo "        NEXT"                               >> $OUTPUT
     echo "___${BN}_:"                                 >> $OUTPUT
     echo "        dq $SYMBOL_START"                   >> $OUTPUT
