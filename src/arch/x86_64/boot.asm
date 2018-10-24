@@ -1,18 +1,17 @@
 global start
 global code_select
 
-extern long_mode_start
+; extern long_mode_start
 section .text
 bits 32
+%include "multiboot_header.asm"
 start:
-
         mov esp, s_t
-        call check_multiboot
+        ;call check_multiboot
         call check_cpuid
         call check_long_mode
 
 %include "init/housekeeping.asm"
-
 %include "init/init_pic.asm"
 
         call set_up_page_tables
@@ -197,3 +196,7 @@ p2_table:
 s_b:
         resb 64
 s_t:
+
+
+%include "long_mode_init.asm"
+%include "forth.asm"

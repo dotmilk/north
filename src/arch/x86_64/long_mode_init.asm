@@ -1,7 +1,7 @@
-global long_mode_start
+; global long_mode_start
 
-        ; STAGE3 equ 0x60000
-extern start_forth
+; STAGE3 equ 0x60000
+; extern start_forth
 section .text
 bits 64
 long_mode_start:
@@ -48,7 +48,6 @@ setup_interrupt_table:
 	mov word [idt+0x13*16], exception_gate_19
         lidt [idtr]
         ret
-
 
 ; -----------------------------------------------------------------------------
 ; CPU Exception Gates
@@ -155,8 +154,6 @@ int_handler:
         hlt
 
 do_test:
-
-
         mov rax, int_handler
         mov [idt+49*16], ax
         mov word [idt+49*16+2], 0x08 ; replace 0x20 with your code section selector

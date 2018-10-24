@@ -1,10 +1,9 @@
         ; r8 / r9 scratch registers - could be clobbered
         ;
-
 global start_forth
 global scratch
 global debug_s
-extern idt
+; extern idt
 bits 64
 %define gdtCsSelector 0x08
 %define r_stack_size 1000
@@ -1155,7 +1154,6 @@ align 8
 interpret_is_lit:
         dq 0
 
-
         defcode "char",4,CHAR
         call _WORD              ; rcx len / rdi ptr
         xor rax, rax
@@ -1252,7 +1250,6 @@ interpret_is_lit:
         defcode "k",1,k
         push qword [ rbp + 40]  ; untested
         NEXT
-
 
 %include "include/builtin-files.asm"
 

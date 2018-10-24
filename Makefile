@@ -1,5 +1,7 @@
 arch ?= x86_64
+prekern := build/pre.bin
 kernel := build/kernel-$(arch).bin
+
 iso := build/os-$(arch).iso
 
 linker_script := src/arch/$(arch)/linker.ld
@@ -36,22 +38,26 @@ $(iso): $(kernel) $(grub_cfg)
 	@grub-mkrescue -o $(iso) build/isofiles 2> /dev/null
 	@rm -r build/isofiles
 
-$(kernel): $(forth_object_files) builtin-files.asm $(assembly_object_files) $(linker_script)
-	@x86_64-elf-ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(assembly_object_files) $(forth_object_files)
+$(kernel): builtin-files.asm build/arch/$(arch)/boot.bin
+	@x86_64-elf-ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(prekern)
+# $(kernel): builtin-files.asm  $(assembly_object_files) $(linker_script)
+# 	@x86_64-elf-ld -n -T $(linker_script) -m elf_x86_64 -o $(kernel) $(assembly_object_files) $(forth_object_files)
 
-build/arch/$(arch)/%.o: src/arch/$(arch)/%.asm
+build/arch/$(arch)/boot.bin: src/arch/$(arch)/boot.asm
+	echo $<
+	echo $@
 	@mkdir -p $(shell dirname $@)
-	@nasm -f bin -i src/arch/$(arch)/ -g -F dwarf -l $@.lst $< -o $@
+	@nasm -f elf64 -i src/arch/$(arch)/ -g -l $@.lst $< -o $(prekern)
 
-build/arch/$(arch)/%.o: forth/%.fs
-# @echo "-----"
-# @echo $<
-# @echo $@
-# @echo "-----"
-	@mkdir -p $(shell dirname $@)
-	@x86_64-elf-objcopy -I binary -O elf64-x86-64 -Bi386 $< $@
+# build/arch/$(arch)/%.o: forth/%.fs
+# # @echo "-----"
+# # @echo $<
+# # @echo $@
+# # @echo "-----"
+# 	@mkdir -p $(shell dirname $@)
+# 	@x86_64-elf-objcopy -I binary -O elf64-x86-64 -Bi386 $< $@
 
 builtin-files.asm: Makefile
+	sh move_forth.sh $(forth_source_files)
 	sh generate-builtins.sh $(forth_source_files)
-
 	mv builtin-files.asm src/arch/$(arch)/include/builtin-files.asm
