@@ -32,24 +32,23 @@ align 8
 %endmacro
 
 %macro make_stack 2
-%define name %[%1]_ptr
         reserve_stack %1,%2
-%macro PUSH%[%1] 1
-        mov r8, [name]        ; get current ptr
+%endmacro
+
+%macro PUSHC 2
+        mov r8, [%1_ptr]        ; get current ptr
         lea r8, [r8-8]          ; offset us
-        mov [name], r8        ; store new ptr
-        mov r9, qword %1        ; get val
+        mov [%1_ptr], r8        ; store new ptr
+        mov r9, qword %2        ; get val
         mov [r8], r9            ; store val
 %endmacro
 
-%macro POP%[%1] 1
-        mov r8, [name]        ; get ptr
+%macro POPC 2
+        mov r8, [%1_ptr]        ; get ptr
         mov r9, [r8]            ; deref for val
-        mov %1, r9              ; deref to %1
+        mov %2, r9              ; deref to %1
         lea r8, [r8+8]          ; new ptr
-        mov [name], r8        ; store it
-%endmacro
-
+        mov [%1_ptr], r8        ; store it
 %endmacro
 
 ; ---- header for forth definitions
@@ -136,7 +135,7 @@ start_forth:
         mov [builtin_wordlist+8], r9 ; no custom fn
         mov [builtin_wordlist+16], r9 ; no name
         mov [builtin_wordlist+24], r9 ; no prev
-        PUSHsorder builtin_wordlist
+        PUSHC sorder, builtin_wordlist
         mov qword [var_current], builtin_wordlist
         ; buffer stuff
         xor r9,r9
@@ -462,6 +461,13 @@ cold_start:
         push rax                ; place on stack
         NEXT
 
+        defcode "@@",2,DBLFETCH
+        pop rbx
+        mov rax, [rbx]
+        mov rax, [rax]
+        push rax
+        NEXT
+
         defcode "+!",2,ADDSTORE
         pop rbx                 ; addr
         pop rax                 ; operand 1
@@ -541,6 +547,8 @@ align 8
 var_%3:
         dq %5
 %endmacro
+        defvar "sorder-stack",12,sorder_t,0,sorder_top
+        ; defvar "sorder-ptr",10,sorder_p,0,sorder_ptr
         defvar "current",7,current
         defvar "compiling-nextname",18,compiling_nextname,0,0
         defvar "sp-limit",8,sp_limit,0,stack+(stack_size*8)
@@ -562,6 +570,7 @@ var_%3:
 	NEXT
 %endmacro
 
+        defconst "sorder-ptr",10,sorder_p,sorder_ptr
         defconst "r0",2,RZ,r_stack_top
         defconst "docol",5,__DOCOL,DOCOL
         defconst "F_IMMED",7,__F_IMMED,F_IMMED
@@ -572,11 +581,11 @@ var_%3:
 
         defcode ">tmp",4,TOTMP
         pop rax
-        PUSHTMP rax
+        PUSHC TMP, rax
         NEXT
 
         defcode "tmp>",4,FROMTMP
-        POPTMP rax
+        POPC TMP ,rax
         push rax
         NEXT
 ; return stack
@@ -1067,10 +1076,10 @@ _ISIMM:
         pop rax                 ; size
         pop rbx                 ; addr
 
-        PUSHTMP [buffaddr]
-        PUSHTMP [buffsize]
-        PUSHTMP [buffpos]
-        PUSHTMP [buffsid]
+        PUSHC TMP, [buffaddr]
+        PUSHC TMP, [buffsize]
+        PUSHC TMP, [buffpos]
+        PUSHC TMP, [buffsid]
 
         mov [buffsize], rax
         mov [buffaddr], rbx
@@ -1082,10 +1091,14 @@ _ISIMM:
         call _restore_memory
         NEXT
 _restore_memory:
-        POPTMP [buffsid]
-        POPTMP [buffpos]
-        POPTMP [buffsize]
-        POPTMP [buffaddr]
+        nop
+        POPC TMP,[buffsid]
+        nop
+        POPC TMP,[buffpos]
+        nop
+        POPC TMP,[buffsize]
+        nop
+        POPC TMP, [buffaddr]
         ret
 
 ; section .data
@@ -1270,6 +1283,12 @@ interpret_is_lit:
         dec rcx                 ; it was, dec counter
         cmp rcx, 0              ; are we done?
         jne code_OPEN_COMMENT.start
+        NEXT
+
+        defcode "hlt",3,HALT
+halt_here:
+        hlt
+        jmp halt_here
         NEXT
 
         defcode "inoop",5,inoop,F_IMMED

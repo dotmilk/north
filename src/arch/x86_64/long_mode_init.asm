@@ -1,5 +1,27 @@
 global long_mode_start
 
+
+extern exception_gate_00
+extern exception_gate_01
+extern exception_gate_02
+extern exception_gate_03
+extern exception_gate_04
+extern exception_gate_05
+extern exception_gate_06
+extern exception_gate_07
+extern exception_gate_08
+extern exception_gate_09
+extern exception_gate_10
+extern exception_gate_11
+extern exception_gate_12
+extern exception_gate_13
+extern exception_gate_14
+extern exception_gate_15
+extern exception_gate_16
+extern exception_gate_17
+extern exception_gate_18
+extern exception_gate_19
+
         ; STAGE3 equ 0x60000
 extern start_forth
 section .text
@@ -15,7 +37,7 @@ long_mode_start:
 
         ; call forth_start
         call setup_interrupt_table
-
+        ;sti
         mov rdx, 12
 
 
@@ -26,116 +48,51 @@ long_mode_start:
         hlt
 
 setup_interrupt_table:
-        mov word [idt+0x00*16], exception_gate_00
-	mov word [idt+0x01*16], exception_gate_01
-	mov word [idt+0x02*16], exception_gate_02
-	mov word [idt+0x03*16], exception_gate_03
-	mov word [idt+0x04*16], exception_gate_04
-	mov word [idt+0x05*16], exception_gate_05
-	mov word [idt+0x06*16], exception_gate_06
-	mov word [idt+0x07*16], exception_gate_07
-	mov word [idt+0x08*16], exception_gate_08
-	mov word [idt+0x09*16], exception_gate_09
-	mov word [idt+0x0A*16], exception_gate_10
-	mov word [idt+0x0B*16], exception_gate_11
-	mov word [idt+0x0C*16], exception_gate_12
-	mov word [idt+0x0D*16], exception_gate_13
-	mov word [idt+0x0E*16], exception_gate_14
-	mov word [idt+0x0F*16], exception_gate_15
-	mov word [idt+0x10*16], exception_gate_16
-	mov word [idt+0x11*16], exception_gate_17
-	mov word [idt+0x12*16], exception_gate_18
-	mov word [idt+0x13*16], exception_gate_19
+        ; mov dword [0x00*16], 0x00000000
+        ; mov dword [0x01*16], 0x00000000
+        ; mov dword [0x02*16], 0x00000000
+        ; mov dword [0x03*16], 0x00000000
+        ; mov dword [0x04*16], 0x00000000
+        ; mov dword [0x05*16], 0x00000000
+        ; mov dword [0x06*16], 0x00000000
+        ; mov dword [0x07*16], 0x00000000
+        ; mov dword [0x08*16], 0x00000000
+        ; mov dword [0x09*16], 0x00000000
+        ; mov dword [0x0A*16], 0x00000000
+        ; mov dword [0x0B*16], 0x00000000
+        ; mov dword [0x0C*16], 0x00000000
+        ; mov dword [0x0D*16], 0x00000000
+        ; mov dword [0x0E*16], 0x00000000
+        ; mov dword [0x0F*16], 0x00000000
+        ; mov dword [0x10*16], 0x00000000
+        ; mov dword [0x11*16], 0x00000000
+        ; mov dword [0x12*16], 0x00000000
+        ; mov dword [0x13*16], 0x00000000
+        ; mov word [0x00*16], exception_gate_00
+	; mov word [0x01*16], exception_gate_01
+	; mov word [0x02*16], exception_gate_02
+	; mov word [0x03*16], exception_gate_03
+	; mov word [0x04*16], exception_gate_04
+	; mov word [0x05*16], exception_gate_05
+	; mov word [0x06*16], exception_gate_06
+	; mov word [0x07*16], exception_gate_07
+	; mov word [0x08*16], exception_gate_08
+	; mov word [0x09*16], exception_gate_09
+	; mov word [0x0A*16], exception_gate_10
+	; mov word [0x0B*16], exception_gate_11
+	; mov word [0x0C*16], exception_gate_12
+	; mov word [0x0D*16], exception_gate_13
+	; mov word [0x0E*16], exception_gate_14
+	; mov word [0x0F*16], exception_gate_15
+	; mov word [0x10*16], exception_gate_16
+	; mov word [0x11*16], exception_gate_17
+	; mov word [0x12*16], exception_gate_18
+	; mov word [0x13*16], exception_gate_19
         lidt [idtr]
         ret
 
 
-; -----------------------------------------------------------------------------
-; CPU Exception Gates
-exception_gate_00:
-	mov al, 0x00
-	jmp exception_gate_main
 
-exception_gate_01:
-	mov al, 0x01
-	jmp exception_gate_main
-
-exception_gate_02:
-	mov al, 0x02
-	jmp exception_gate_main
-
-exception_gate_03:
-	mov al, 0x03
-	jmp exception_gate_main
-
-exception_gate_04:
-	mov al, 0x04
-	jmp exception_gate_main
-
-exception_gate_05:
-	mov al, 0x05
-	jmp exception_gate_main
-
-exception_gate_06:
-	mov al, 0x06
-	jmp exception_gate_main
-
-exception_gate_07:
-	mov al, 0x07
-	jmp exception_gate_main
-
-exception_gate_08:
-	mov al, 0x08
-	jmp exception_gate_main
-
-exception_gate_09:
-	mov al, 0x09
-	jmp exception_gate_main
-
-exception_gate_10:
-	mov al, 0x0A
-	jmp exception_gate_main
-
-exception_gate_11:
-	mov al, 0x0B
-	jmp exception_gate_main
-
-exception_gate_12:
-	mov al, 0x0C
-	jmp exception_gate_main
-
-exception_gate_13:
-	mov al, 0x0D
-	jmp exception_gate_main
-
-exception_gate_14:
-	mov al, 0x0E
-	jmp exception_gate_main
-
-exception_gate_15:
-	mov al, 0x0F
-	jmp exception_gate_main
-
-exception_gate_16:
-	mov al, 0x10
-	jmp exception_gate_main
-
-exception_gate_17:
-	mov al, 0x11
-	jmp exception_gate_main
-
-exception_gate_18:
-	mov al, 0x12
-	jmp exception_gate_main
-
-exception_gate_19:
-	mov al, 0x13
-	jmp exception_gate_main
-
-exception_gate_main:
-exception_gate_main_hang:
-	nop
-	jmp exception_gate_main_hang
 
 
 section .bss
@@ -146,7 +103,8 @@ idt:
 section .data
 idtr:
         dw 4095                 ; limit
-        dq idt                  ; addr
+        dq 0
+        ; dq idt                  ; addr
 
 section .text
 int_handler:

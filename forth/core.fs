@@ -571,7 +571,7 @@ load-buffer-print on
         require-buffer
     then ;
 
-inoop
+
 require @forth/structures.fs
 require @forth/interpreter.fs
 require @forth/strings.fs
@@ -583,7 +583,8 @@ require @forth/strings.fs
         2drop
     then ;
 
-inoop
+require @forth/vocabulary.fs
+
 
 \ defer emitting words until proper kernel\emit support
 \ : cr '\n\' emit ;
@@ -978,7 +979,7 @@ char t display
         65 i + display
     loop
 ;
-
+hlt
 test-do
 \ : nt' (word) (find) ;
 \ : comp' nt' >cfa

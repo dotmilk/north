@@ -22,7 +22,7 @@ clean:
 	@rm -r build
 
 debug: $(iso)
-	@qemu-system-x86_64 -S -s -curses -cdrom $(iso)
+	@qemu-system-x86_64 -S -s -vga cirrus -curses -cdrom $(iso)
 
 run: $(iso)
 	@qemu-system-x86_64 -s -curses -cdrom $(iso)
@@ -41,7 +41,7 @@ $(kernel): $(forth_object_files) builtin-files.asm $(assembly_object_files) $(li
 
 build/arch/$(arch)/%.o: src/arch/$(arch)/%.asm
 	@mkdir -p $(shell dirname $@)
-	@nasm -f bin -i src/arch/$(arch)/ -g -F dwarf -l $@.lst $< -o $@
+	@nasm -f elf64 -i src/arch/$(arch)/  -g -F dwarf -l $@.lst $< -o $@
 
 build/arch/$(arch)/%.o: forth/%.fs
 # @echo "-----"
