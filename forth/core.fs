@@ -19,7 +19,11 @@ hide '
 
 \ here in asm, moar ans
 alias (here) here
+
+
 : here ( -- addr ) here @ ;
+
+
 \ old-here is addr that stores here
 : allot ( n -- ) here + (here) ! ;
 
@@ -787,12 +791,17 @@ RDTSC timestamp counter
 \ 48 c, AD c, FF c, 20 c,
 \ AD C, FF C, 20 C,
 hex
+
+
 : =next ( addr -- next? )
        dup c@ 48 <> if drop false exit then
     1+ dup c@ AD <> if drop false exit then
     1+ dup c@ FF <> if drop false exit then
     1+     c@ 20 <> if      false exit then
 ;
+
+
+
 decimal
 
 : (inline) ( cfa -- )
@@ -972,6 +981,9 @@ char w display
 char o display
 char o display
 char t display
+
+
+
 
 : test-do
     4 0 do

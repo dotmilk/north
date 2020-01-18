@@ -35,6 +35,10 @@ align 8
         reserve_stack %1,%2
 %endmacro
 
+%macro RESETC 1
+        mov qword [%1_ptr], %1_top
+%endmacro
+
 %macro PUSHC 2
         mov r8, [%1_ptr]        ; get current ptr
         lea r8, [r8-8]          ; offset us
@@ -489,7 +493,7 @@ cold_start:
         NEXT
 
         defcode "c@",2,FETCHBYTE
-        pop rbx                 ; addr
+n        pop rbx                 ; addr
         xor rax, rax            ; clear rax
         mov al, [rbx]
         push rax
@@ -1283,6 +1287,25 @@ interpret_is_lit:
         dec rcx                 ; it was, dec counter
         cmp rcx, 0              ; are we done?
         jne code_OPEN_COMMENT.start
+        NEXT
+
+        defcode "sorder-ptr!",11,sorder_set
+        pop rax
+        mov qword [sorder_ptr], rax
+        NEXT
+
+        defcode "sorder-reset",12,sorder_rst
+        RESETC sorder
+        NEXT
+
+        defcode "sorder-push",11,sorder_psh
+        pop rax
+        PUSHC sorder, rax
+        NEXT
+
+        defcode "sorder-pop",10,sorder_pop
+        POPC sorder, rax
+        push rax
         NEXT
 
         defcode "hlt",3,HALT

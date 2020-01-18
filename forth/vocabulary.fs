@@ -15,12 +15,14 @@ end-struct wid%
     wid-name @ ?dup if count else 0 0 then ;
 
 \ eulex spells it sorder_stack sorder_tos @ cells +
-: context sorder-ptr @@ ;
+: context sorder-ptr @ ;
 
+\ store ptr top for reset later
+context constant sorder-ptr-reset
 \ store the wid at context @
 context @ constant forth-impl-wordlist
 : forth-impl
-    forth-impl-wordlist context ! ;
+    forth-impl-wordlist sorder-push ;
 forth-impl-wordlist last-wid !
 
 : get-order ( -- widn .. wid1 n )
@@ -38,18 +40,23 @@ forth-impl-wordlist last-wid !
 
 : set-order
     dup 0= if
-        nop
+        sorder-reset
+        forth-impl
+        drop
     else
-        nop
-    then ;
+        sorder-reset
+        dup ( n n - )
+        sorder-ptr @ swap ( n ptr n - )
+        cells - dup sorder-ptr! swap ( offset n - )
+        0 ?do
+            ( widn ... wid1 offset )
+            dup -rot nop ! ( widn ... wid2 offset - )
 
+            cell + (  - )
+        loop
+    then ;
 context
-nop
-sorder-ptr
-nop
-sorder-ptr @
-nop
-sorder-ptr @@
+666 2 1 forth-impl-wordlist 3 nop set-order
 nop
 
 \ : set-order ( widn .. wid1 n -- )
